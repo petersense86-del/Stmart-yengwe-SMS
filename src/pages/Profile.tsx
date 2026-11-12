@@ -6,7 +6,7 @@ import { toast } from "../components/feedback";
 import { logActivity } from "../utils/db";
 import { readImage, IMAGE_SIZES } from "../utils/image";
 import { PROVINCES, GRADES } from "../data/constants";
-import { ROLE_LABEL } from "../components/DashboardLayout";
+import { roleLabel } from "../components/DashboardLayout";
 import { PasswordInput } from "./Login";
 import type { User as UserType } from "../types";
 
@@ -100,7 +100,7 @@ export default function Profile() {
           <div className="flex-1 min-w-0">
             <h2 className="text-xl font-bold text-gray-900 truncate">{user.fullName}</h2>
             <div className="flex flex-wrap items-center gap-2 mt-1">
-              <Badge color="emerald">{ROLE_LABEL[user.role]}</Badge>
+              <Badge color="emerald">{roleLabel(user)}</Badge>
               {user.hodDepartment && <Badge color="blue">{user.hodDepartment}</Badge>}
               {user.grade && <Badge color="gray">Grade {user.grade}{user.classSection ? ` · ${user.classSection}` : ""}</Badge>}
             </div>

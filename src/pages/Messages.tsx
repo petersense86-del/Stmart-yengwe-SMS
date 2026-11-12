@@ -244,7 +244,7 @@ export default function Messages() {
                 <Avatar name={u.fullName} src={u.profilePicture} size="sm" />
                 <div className="min-w-0">
                   <div className="font-medium text-sm text-gray-900 truncate">{u.fullName}</div>
-                  <span className={`text-[11px] px-1.5 py-0.5 rounded ${ROLE_CHIP[u.role]}`}>{ROLE_NAME[u.role]}{u.grade ? ` · ${u.grade}` : ""}</span>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded ${ROLE_CHIP[u.role]}`}>{u.isDeveloper ? "Developer" : ROLE_NAME[u.role]}{u.grade ? ` · ${u.grade}` : ""}</span>
                 </div>
               </button>
             ))}
@@ -272,7 +272,7 @@ export default function Messages() {
                   <Avatar name={activeDbUser.fullName} src={activeDbUser.profilePicture} />
                   <div className="min-w-0">
                     <div className="font-semibold text-sm text-gray-900 truncate">{activeDbUser.fullName}</div>
-                    <div className="text-xs text-gray-500">{ROLE_NAME[activeDbUser.role]}{activeDbUser.grade ? ` · Grade ${activeDbUser.grade}` : ""}</div>
+                    <div className="text-xs text-gray-500">{activeDbUser.isDeveloper ? "Developer" : ROLE_NAME[activeDbUser.role]}{activeDbUser.grade ? ` · Grade ${activeDbUser.grade}` : ""}</div>
                   </div>
                 </div>
                 {!callActive && currentUser.role !== "pupil" && (

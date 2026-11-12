@@ -7,6 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import { peekDb, useDbVersion, useSyncStatus } from "../utils/db";
 import { Avatar } from "./ui";
 import type { Role } from "../data/constants";
+import type { User } from "../types";
 
 interface NavItem { id: string; label: string; icon: LucideIcon; roles: Role[] }
 
@@ -41,6 +42,10 @@ export const ROLE_LABEL: Record<Role, string> = {
   teacher: "Teacher",
   pupil: "Pupil",
 };
+
+export function roleLabel(u: Pick<User, "role" | "isDeveloper">) {
+  return u.isDeveloper ? "Developer" : ROLE_LABEL[u.role];
+}
 
 const COLLAPSE_KEY = "ypms.sidebarCollapsed";
 
@@ -173,7 +178,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, tit
             <button onClick={() => go("profile")} className="flex items-center gap-3 rounded-full sm:rounded-lg sm:pl-3 sm:pr-1 sm:py-1 hover:bg-gray-50 transition-colors">
               <div className="text-right hidden md:block">
                 <div className="text-sm font-semibold text-gray-900 leading-tight max-w-[200px] truncate">{user.fullName}</div>
-                <div className="text-xs text-emerald-700 font-medium">{ROLE_LABEL[user.role]}</div>
+                <div className="text-xs text-emerald-700 font-medium">{roleLabel(user)}</div>
               </div>
               <Avatar name={user.fullName} src={user.profilePicture} className="ring-2 ring-emerald-600 ring-offset-1" />
             </button>

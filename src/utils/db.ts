@@ -80,7 +80,7 @@ function omit<T extends object>(obj: T, keys: string[]): Row {
 }
 const orUndef = <T,>(v: T | null | undefined) => (v === null ? undefined : v);
 
-const PROFILE_COLUMNS = ["id", "username", "role", "fullName", "grade", "classSection", "hodDepartment", "mustChangePassword", "password", "createdAt"];
+const PROFILE_COLUMNS = ["id", "username", "role", "fullName", "grade", "classSection", "hodDepartment", "mustChangePassword", "isDeveloper", "password", "createdAt"];
 function profileToRow(u: User): Row {
   return {
     id: u.id, username: u.username, role: u.role, full_name: u.fullName,
@@ -94,7 +94,7 @@ function profileFromRow(r: Row): User {
     id: r.id as string, username: r.username as string, role: r.role as User["role"], fullName: r.full_name as string,
     grade: orUndef(r.grade as User["grade"]), classSection: orUndef(r.class_section as string),
     hodDepartment: orUndef(r.hod_department as User["hodDepartment"]),
-    mustChangePassword: r.must_change_password as boolean, createdAt: r.created_at as string, password: "",
+    mustChangePassword: r.must_change_password as boolean, isDeveloper: !!r.is_developer, createdAt: r.created_at as string, password: "",
   } as User;
 }
 
@@ -427,7 +427,7 @@ async function loadCollections(collections: CollectionKey[] = ALL_COLLECTIONS) {
   // Each loader assigns its collection only after its fetch succeeds.
   await Promise.all(collections.map((c) => LOADERS[c]()));
   cache = { ...cache };
-  const hasHead = cache.users.some((u) => u.role === "headteacher");
+  const hasHead = cache.users.some((u) => u.role === "headteacher" && !u.isDeveloper);
   const hasDeputy = cache.users.some((u) => u.role === "deputy");
   cache.settings.headteacherRegistered = hasHead;
   cache.settings.deputyRegistered = hasDeputy;

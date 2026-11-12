@@ -6,6 +6,7 @@ export interface User {
   password: string;
   fullName: string;
   role: Role;
+  isDeveloper?: boolean; // full headteacher access, but not the school's headteacher
   email?: string;
   phone?: string;
   profilePicture?: string; // base64

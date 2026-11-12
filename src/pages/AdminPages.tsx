@@ -220,9 +220,9 @@ export function SettingsPage() {
   function saveSettings() {
     const db2 = getDb();
     db2.settings = { ...db2.settings, ...form };
-    const headUser = db2.users.find((u) => u.role === "headteacher");
+    const headUser = db2.users.find((u) => u.role === "headteacher" && !u.isDeveloper);
     const deputyUser = db2.users.find((u) => u.role === "deputy");
-    if (headUser && isHead && form.headteacherName) headUser.fullName = form.headteacherName;
+    if (headUser && isHead && !currentUser.isDeveloper && form.headteacherName) headUser.fullName = form.headteacherName;
     if (deputyUser && (isHead || isDeputy) && form.deputyName) deputyUser.fullName = form.deputyName;
     saveDb(db2);
     logActivity(currentUser.id, currentUser.fullName, currentUser.role, "Updated school settings");
