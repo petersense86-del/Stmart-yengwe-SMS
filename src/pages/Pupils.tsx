@@ -6,7 +6,8 @@ import { toast, confirmDialog, showCredentials } from "../components/feedback";
 import { getDb, saveDb, logActivity, refreshData, useDbVersion } from "../utils/db";
 import { adminUsers } from "../lib/supabase";
 import { readImage, IMAGE_SIZES } from "../utils/image";
-import { PROVINCES, GRADES, JUNIOR_SUBJECTS, SENIOR_SUBJECTS } from "../data/constants";
+import { PROVINCES, FORMS, FORM_INFO, A_LEVEL_MIN_SUBJECTS, A_LEVEL_MAX_SUBJECTS, formLabel, isALevel, isForm } from "../data/constants";
+import { formPathways, formStreams, formSubjects, pupilSubjects } from "../utils/academics";
 import type { User } from "../types";
 
 export default function Pupils() {
@@ -61,7 +62,13 @@ export default function Pupils() {
 
   async function savePupil() {
     setError("");
-    if (!form.fullName?.trim() || !form.grade) { setError("Full name and grade are required."); return; }
+    if (!form.fullName?.trim() || !form.grade) { setError("Full name and form are required."); return; }
+    const aLevel = isALevel(form.grade);
+    const chosen = form.subjects?.length ?? 0;
+    if (aLevel && (chosen < A_LEVEL_MIN_SUBJECTS || chosen > A_LEVEL_MAX_SUBJECTS)) {
+      setError(`A-Level pupils take ${A_LEVEL_MIN_SUBJECTS} to ${A_LEVEL_MAX_SUBJECTS} subjects. ${chosen} selected.`);
+      return;
+    }
     if (modal.mode === "register") {
       if (!form.username) { setError("Username is required."); return; }
       if (pupils.some((u) => u.username === form.username)) { setError("That username already exists."); return; }
@@ -74,6 +81,7 @@ export default function Pupils() {
           province: form.province, district: form.district, dateOfBirth: form.dateOfBirth,
           guardiansName: form.guardiansName, guardiansPhone: form.guardiansPhone, address: form.address,
           enrollmentYear: new Date().getFullYear(),
+          pathway: aLevel ? form.pathway : undefined, subjects: aLevel ? form.subjects : undefined,
         };
         const res = await adminUsers({ action: "create", role: "pupil", username: form.username, fullName: form.fullName.trim(), profile });
         await refreshData(["users"]);
@@ -90,7 +98,10 @@ export default function Pupils() {
       const db2 = getDb();
       const idx = db2.users.findIndex((u) => u.id === modal.pupil!.id);
       if (idx >= 0) {
-        db2.users[idx] = { ...db2.users[idx], ...form, username: db2.users[idx].username, role: "pupil" };
+        db2.users[idx] = {
+          ...db2.users[idx], ...form, username: db2.users[idx].username, role: "pupil",
+          pathway: aLevel ? form.pathway : undefined, subjects: aLevel ? form.subjects : undefined,
+        };
         saveDb(db2);
         logActivity(currentUser.id, currentUser.fullName, currentUser.role, `Edited pupil ${db2.users[idx].fullName}`);
         toast.success("Pupil details saved.");
@@ -125,7 +136,31 @@ export default function Pupils() {
 
   const provinces = Object.keys(PROVINCES);
   const districts = form.province ? PROVINCES[form.province]?.districts || [] : [];
-  const isJuniorGrade = (g?: string) => !!g && ["8A", "8B", "9A", "9B"].includes(g);
+  const settings = db.settings;
+  const streamOptions = formStreams(settings, form.grade);
+  const pathways = formPathways(settings, form.grade);
+  const chosenSubjects = form.subjects || [];
+  const aLevelOptions = Array.from(new Set([...formSubjects(settings, form.grade), ...chosenSubjects]));
+
+  function chooseForm(g: string) {
+    const streams = formStreams(settings, g);
+    setForm((f) => ({
+      ...f, grade: g,
+      classSection: streams.includes(f.classSection || "") ? f.classSection : streams[0],
+      ...(isALevel(g) ? {} : { pathway: undefined, subjects: undefined }),
+    }));
+  }
+  function choosePathway(name: string) {
+    const offered = formSubjects(settings, form.grade);
+    const suggested = pathways.find((p) => p.name === name)?.subjects.filter((s) => offered.includes(s)) || [];
+    setForm((f) => ({ ...f, pathway: name || undefined, subjects: suggested.slice(0, A_LEVEL_MAX_SUBJECTS) }));
+  }
+  function toggleSubject(s: string) {
+    setForm((f) => {
+      const current = f.subjects || [];
+      return { ...f, subjects: current.includes(s) ? current.filter((x) => x !== s) : [...current, s] };
+    });
+  }
 
   return (
     <div>
@@ -139,9 +174,9 @@ export default function Pupils() {
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <Input aria-label="Search pupils" placeholder="Search by name, pupil ID or username…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
-          <Select aria-label="Filter by grade" value={gradeFilter} onChange={(e) => setGradeFilter(e.target.value)}>
-            <option value="">All grades</option>
-            {GRADES.map((g) => <option key={g} value={g}>Grade {g}</option>)}
+          <Select aria-label="Filter by form" value={gradeFilter} onChange={(e) => setGradeFilter(e.target.value)}>
+            <option value="">All forms</option>
+            {FORMS.map((g) => <option key={g} value={g}>{g}</option>)}
           </Select>
         </div>
       </Card>
@@ -154,7 +189,7 @@ export default function Pupils() {
             action={pupils.length === 0 && canRegister ? <Button variant="gold" onClick={openRegister}><Plus className="w-4 h-4" />Register the first pupil</Button> : undefined}
           />
         ) : (
-          <Table headers={["Pupil", "Pupil ID", "Grade", "Gender", "Province", ""]}>
+          <Table headers={["Pupil", "Pupil ID", "Form", "Gender", "Province", ""]}>
             {filtered.map((p) => (
               <tr key={p.id} className="hover:bg-gray-50/80 transition-colors">
                 <td className="px-4 py-3">
@@ -167,7 +202,7 @@ export default function Pupils() {
                   </div>
                 </td>
                 <td className="px-4 py-3 text-xs font-mono text-gray-600">{p.pupilId || "—"}</td>
-                <td className="px-4 py-3"><Badge color="emerald">{p.grade}{p.classSection && !p.grade?.endsWith(p.classSection) ? ` · ${p.classSection}` : ""}</Badge></td>
+                <td className="px-4 py-3"><Badge color="emerald">{formLabel(p.grade)}{p.classSection && !p.grade?.endsWith(p.classSection) ? ` · ${p.classSection}` : ""}</Badge></td>
                 <td className="px-4 py-3 text-gray-600">{p.gender || "—"}</td>
                 <td className="px-4 py-3 text-xs text-gray-600">{p.province || "—"}</td>
                 <td className="px-4 py-3">
@@ -191,7 +226,7 @@ export default function Pupils() {
               <Avatar name={modal.pupil.fullName} src={modal.pupil.profilePicture} size="lg" className="ring-2 ring-emerald-600 ring-offset-2" />
               <div>
                 <div className="font-bold text-lg text-gray-900">{modal.pupil.fullName}</div>
-                <Badge color="emerald">Grade {modal.pupil.grade}{modal.pupil.classSection ? ` · Section ${modal.pupil.classSection}` : ""}</Badge>
+                <Badge color="emerald">{formLabel(modal.pupil.grade)}{modal.pupil.classSection ? ` · Stream ${modal.pupil.classSection}` : ""}</Badge>
               </div>
             </div>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
@@ -208,9 +243,11 @@ export default function Pupils() {
               ))}
             </dl>
             <div className="pt-4 border-t border-gray-100">
-              <h4 className="font-semibold text-gray-900 mb-2">Subjects · {isJuniorGrade(modal.pupil.grade) ? "Junior Secondary" : "Senior Secondary"}</h4>
+              <h4 className="font-semibold text-gray-900 mb-2">
+                Subjects{isForm(modal.pupil.grade) ? ` · ${FORM_INFO[modal.pupil.grade].level}` : ""}{modal.pupil.pathway ? ` · ${modal.pupil.pathway}` : ""}
+              </h4>
               <div className="flex flex-wrap gap-1.5">
-                {(isJuniorGrade(modal.pupil.grade) ? JUNIOR_SUBJECTS : SENIOR_SUBJECTS).map((s) => <Badge key={s} color="gray">{s}</Badge>)}
+                {pupilSubjects(modal.pupil, settings).map((s) => <Badge key={s} color="gray">{s}</Badge>)}
               </div>
             </div>
           </div>
@@ -237,11 +274,15 @@ export default function Pupils() {
               <Input label="Full name *" value={form.fullName || ""} onChange={(e) => setForm({ ...form, fullName: e.target.value })} autoFocus />
               <Input label="Username *" value={form.username || ""} onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "") })} disabled={modal.mode === "edit"} hint={modal.mode === "register" ? "Used to sign in. 3–32 letters/numbers." : "Usernames can't be changed"} />
               <Input label="Pupil ID" value={form.pupilId || ""} onChange={(e) => setForm({ ...form, pupilId: e.target.value })} placeholder="Auto-generated if blank" />
-              <Select label="Grade *" value={form.grade || ""} onChange={(e) => setForm({ ...form, grade: e.target.value as User["grade"] })}>
+              <Select label="Form *" value={form.grade || ""} onChange={(e) => chooseForm(e.target.value)}>
                 <option value="">Select…</option>
-                {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+                {form.grade && !isForm(form.grade) && <option value={form.grade}>{formLabel(form.grade)} (old)</option>}
+                {FORMS.map((g) => <option key={g} value={g}>{g} · {FORM_INFO[g].qualification}</option>)}
               </Select>
-              <Input label="Class section" value={form.classSection || ""} onChange={(e) => setForm({ ...form, classSection: e.target.value.toUpperCase() })} maxLength={2} placeholder="e.g. A, B" />
+              <Select label="Stream" value={form.classSection || ""} onChange={(e) => setForm({ ...form, classSection: e.target.value })}>
+                {form.classSection && !streamOptions.includes(form.classSection) && <option value={form.classSection}>{form.classSection}</option>}
+                {streamOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </Select>
               <Select label="Gender" value={form.gender || ""} onChange={(e) => setForm({ ...form, gender: e.target.value as "Male" | "Female" })}>
                 <option value="">Select…</option>
                 <option value="Male">Male</option>
@@ -262,6 +303,30 @@ export default function Pupils() {
               <Input label="Guardian phone" type="tel" value={form.guardiansPhone || ""} onChange={(e) => setForm({ ...form, guardiansPhone: e.target.value })} />
               <Input label="Home address" value={form.address || ""} onChange={(e) => setForm({ ...form, address: e.target.value })} className="md:col-span-2" />
             </div>
+            {isALevel(form.grade) && (
+              <div className="rounded-xl ring-1 ring-gray-200 p-3 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h4 className="font-semibold text-gray-900 text-sm">A-Level pathway &amp; subjects *</h4>
+                  <span className="text-xs text-gray-500">{chosenSubjects.length} selected · choose {A_LEVEL_MIN_SUBJECTS}–{A_LEVEL_MAX_SUBJECTS}</span>
+                </div>
+                <Select label="Pathway" value={form.pathway || ""} onChange={(e) => choosePathway(e.target.value)}>
+                  <option value="">Select…</option>
+                  {pathways.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                </Select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto">
+                  {aLevelOptions.map((s) => {
+                    const checked = chosenSubjects.includes(s);
+                    const full = !checked && chosenSubjects.length >= A_LEVEL_MAX_SUBJECTS;
+                    return (
+                      <label key={s} className={`flex items-center gap-2 text-sm px-2.5 py-2 rounded-lg transition-colors ${checked ? "bg-emerald-50 ring-1 ring-emerald-300 text-emerald-900" : full ? "opacity-50" : "hover:bg-gray-50 cursor-pointer"}`}>
+                        <input type="checkbox" className="accent-emerald-600 w-4 h-4" checked={checked} disabled={full} onChange={() => toggleSubject(s)} />
+                        <span>{s}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {modal.mode === "register" && (
               <Alert tone="success">A secure temporary password is generated automatically and shown once. The pupil chooses their own password at first sign-in.</Alert>
             )}

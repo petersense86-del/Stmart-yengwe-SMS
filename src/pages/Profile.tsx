@@ -5,7 +5,7 @@ import { Card, Button, Input, Select, Avatar, Badge } from "../components/ui";
 import { toast } from "../components/feedback";
 import { logActivity } from "../utils/db";
 import { readImage, IMAGE_SIZES } from "../utils/image";
-import { PROVINCES, GRADES } from "../data/constants";
+import { PROVINCES, formLabel } from "../data/constants";
 import { roleLabel } from "../components/DashboardLayout";
 import { PasswordInput } from "./Login";
 import type { User as UserType } from "../types";
@@ -102,7 +102,7 @@ export default function Profile() {
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <Badge color="emerald">{roleLabel(user)}</Badge>
               {user.hodDepartment && <Badge color="blue">{user.hodDepartment}</Badge>}
-              {user.grade && <Badge color="gray">Grade {user.grade}{user.classSection ? ` · ${user.classSection}` : ""}</Badge>}
+              {user.grade && <Badge color="gray">{formLabel(user.grade)}{user.classSection ? ` · ${user.classSection}` : ""}</Badge>}
             </div>
             <p className="text-xs text-gray-500 mt-2">@{user.username} · Joined {new Date(user.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}</p>
           </div>
@@ -126,11 +126,8 @@ export default function Profile() {
           {user.role === "pupil" && (
             <>
               <Input label="Pupil ID" value={form.pupilId || ""} disabled hint={lockedHint} />
-              <Select label="Grade" value={form.grade || ""} disabled>
-                <option value="">Select…</option>
-                {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
-              </Select>
-              <Input label="Class section" value={form.classSection || ""} disabled hint={lockedHint} />
+              <Input label="Form" value={formLabel(form.grade)} disabled />
+              <Input label="Stream" value={form.classSection || ""} disabled hint={lockedHint} />
               <Select label="Province" value={form.province || ""} onChange={(e) => setForm({ ...form, province: e.target.value, district: "" })} disabled={!editing}>
                 <option value="">Select…</option>
                 {provinces.map((p) => <option key={p} value={p}>{p}</option>)}

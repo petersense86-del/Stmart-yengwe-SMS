@@ -1,8 +1,8 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Result, User, SchoolSettings } from "../types";
-import type { Role } from "../data/constants";
-import { yengweGrade } from "../types";
+import { FORM_INFO, formLabel, isForm, type Role } from "../data/constants";
+import { gradeFor, performanceColor } from "./academics";
 import { getDb, logActivity, saveDb } from "./db";
 
 export function generateResultPDF(
@@ -66,7 +66,7 @@ export function generateResultPDF(
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.text("Pupil End-of-Term Report Card", pageWidth / 2 + 10, 20, { align: "center" });
+  doc.text(`Pupil Report Card · ${result.term}`, pageWidth / 2 + 10, 20, { align: "center" });
 
   doc.setFont("helvetica", "italic");
   doc.setFontSize(9);
@@ -83,8 +83,8 @@ export function generateResultPDF(
 
   const infoLines: [string, string, string, string][] = [
     ["Name:", pupil.fullName, "Pupil ID:", pupil.pupilId || "N/A"],
-    ["Grade:", result.grade, "Term:", `${result.term} ${result.year}`],
-    ["Gender:", pupil.gender || "N/A", "", ""],
+    ["Form:", `${formLabel(result.grade)}${pupil.classSection ? ` ${pupil.classSection}` : ""}`, "Test:", `${result.term} ${result.year}`],
+    ["Gender:", pupil.gender || "N/A", isForm(result.grade) ? "Level:" : "", isForm(result.grade) ? FORM_INFO[result.grade].level : ""],
   ];
 
   let y = startY + 5;
@@ -106,7 +106,7 @@ export function generateResultPDF(
   const publishedScores = result.scores.filter((s) => s.published);
 
   const tableData = publishedScores.map((s, i) => {
-    const g = yengweGrade(s.score);
+    const g = gradeFor(s.score, settings);
     return [i + 1, s.subject, s.score.toString(), g.grade, g.name, s.teacherName];
   });
 
@@ -128,7 +128,7 @@ export function generateResultPDF(
   const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
   const totalScore = publishedScores.reduce((sum, s) => sum + s.score, 0);
   const avg = publishedScores.length > 0 ? totalScore / publishedScores.length : 0;
-  const avgGrade = yengweGrade(avg);
+  const avgGrade = gradeFor(avg, settings);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
@@ -136,7 +136,7 @@ export function generateResultPDF(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
 
-  const color = avg < 40 ? [220, 38, 38] : avg < 55 ? [234, 179, 8] : [22, 163, 74];
+  const color = { red: [220, 38, 38], yellow: [234, 179, 8], green: [22, 163, 74] }[performanceColor(avg, settings)];
   doc.setTextColor(color[0], color[1], color[2]);
   doc.setFont("helvetica", "bold");
   doc.text(`Average Score: ${avg.toFixed(1)}%  (Grade ${avgGrade.grade} - ${avgGrade.name})`, 14, finalY + 6);

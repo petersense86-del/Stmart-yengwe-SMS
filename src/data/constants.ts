@@ -42,60 +42,110 @@ export const PROVINCES: Record<string, { capital: string; districts: string[] }>
   },
 };
 
-// Junior Secondary Subjects (Grade 8-9)
-export const JUNIOR_SUBJECTS = [
+// ---------------------------------------------------------------------------
+// Forms (Zambian secondary curriculum). Forms 1–4 are Ordinary Level, Forms 5–6
+// Advanced Level. Older records may still hold legacy grades such as "10A".
+// ---------------------------------------------------------------------------
+export const FORMS = ["Form 1", "Form 2", "Form 3", "Form 4", "Form 5", "Form 6"] as const;
+export type Form = (typeof FORMS)[number];
+export type Grade = string;
+
+export const FORM_INFO: Record<Form, { level: "Ordinary Level" | "Advanced Level"; qualification: string }> = {
+  "Form 1": { level: "Ordinary Level", qualification: "O-Level" },
+  "Form 2": { level: "Ordinary Level", qualification: "O-Level" },
+  "Form 3": { level: "Ordinary Level", qualification: "O-Level" },
+  "Form 4": { level: "Ordinary Level", qualification: "National School Certificate" },
+  "Form 5": { level: "Advanced Level", qualification: "A-Level" },
+  "Form 6": { level: "Advanced Level", qualification: "A-Level" },
+};
+
+export function isForm(g?: string): g is Form {
+  return !!g && (FORMS as readonly string[]).includes(g);
+}
+export function isALevel(g?: string) {
+  return g === "Form 5" || g === "Form 6";
+}
+/** "Form 3" stays as is; a legacy grade such as "10A" reads "Grade 10A". */
+export function formLabel(g?: string) {
+  if (!g) return "";
+  return isForm(g) ? g : `Grade ${g}`;
+}
+
+// Ordinary Level subject catalogue (Forms 1–4). Schools choose which they offer.
+export const O_LEVEL_SUBJECTS = [
   "English Language",
   "Mathematics",
-  "Integrated Science",
-  "Social Studies",
-  "Business Studies",
-  "Agricultural Science",
-  "Computer Studies / ICT",
-  "Design & Technology",
-  "Art & Design",
-  "Musical Arts Education",
-  "Physical Education",
-  "Religious Education",
-  "Home Economics",
-  "Zambian Languages",
-];
-
-// Senior Secondary Subjects (Grade 10-12)
-export const SENIOR_SUBJECTS = [
-  "English",
-  "Mathematics",
-  "Additional Mathematics",
   "Biology",
   "Chemistry",
   "Physics",
+  "Agricultural Science",
+  "Computer Science",
+  "Information and Communication Technology (ICT)",
+  "Civic Education",
   "Geography",
   "History",
-  "Civic Education",
-  "English Literature",
-  "Religious Education RE 2044",
-  "Commerce / Principles of Accounts",
-  "Business Studies",
-  "Economics",
-  "Travel & Tourism",
-  "Agricultural Science",
-  "Art & Design",
-  "Computer Science",
-  "Design & Technology",
-  "Home Economics",
-  "Food & Nutrition",
-  "Fashion & Fabrics",
-  "Hospitality Management",
-  "Music",
-  "Physical Education",
-  "French",
+  "Religious Education",
+  "Literature in English",
   "Zambian Languages",
+  "French",
+  "Commerce",
+  "Principles of Accounts",
+  "Design and Technology Studies",
+  "Art and Design",
+  "Music Arts",
+  "Physical Education",
+  "Fashion and Fabrics",
+  "Food and Nutrition",
+  "Hospitality Management",
+  "Travel and Tourism",
 ];
 
-export const GRADES = ["8A", "8B", "9A", "9B", "10A", "10B", "11A", "11B", "12A", "12B"] as const;
-export type Grade = (typeof GRADES)[number];
+// Advanced Level pathways (Forms 5–6). Associated subjects are indicative.
+export const A_LEVEL_PATHWAYS: { name: string; subjects: string[] }[] = [
+  { name: "Natural Sciences", subjects: ["Biology", "Chemistry", "Physics", "Mathematics"] },
+  { name: "Agricultural Science", subjects: ["Agricultural Science", "Biology", "Chemistry"] },
+  { name: "Computer Science", subjects: ["Computer Science", "Mathematics", "Physics"] },
+  { name: "Design and Technology", subjects: ["Design and Technology", "Mathematics"] },
+  { name: "Business Studies", subjects: ["Commerce", "Accounting", "Economics"] },
+  { name: "Social Sciences and Languages", subjects: ["Geography", "History", "Civic Education", "Languages"] },
+  { name: "Performing and Creative Arts", subjects: ["Art and Design", "Music"] },
+  { name: "Physical Education and Sports", subjects: ["Physical Education", "Sports Science"] },
+  { name: "Hospitality Management", subjects: ["Hospitality Management", "Food and Nutrition"] },
+  { name: "Travel and Tourism", subjects: ["Travel and Tourism", "Geography"] },
+  { name: "Textile Design and Technology", subjects: ["Fashion and Fabrics", "Design and Technology"] },
+  { name: "Nutrition and Food Technology", subjects: ["Food and Nutrition", "Biology", "Chemistry"] },
+];
 
-export const JUNIOR_GRADES: Grade[] = ["8A", "8B", "9A", "9B"];
-export const SENIOR_GRADES: Grade[] = ["10A", "10B", "11A", "11B", "12A", "12B"];
+export const A_LEVEL_SUBJECTS = Array.from(new Set(A_LEVEL_PATHWAYS.flatMap((p) => p.subjects)));
+export const A_LEVEL_MIN_SUBJECTS = 3;
+export const A_LEVEL_MAX_SUBJECTS = 4;
+
+export const DEFAULT_STREAMS = ["A", "B"];
+
+// ---------------------------------------------------------------------------
+// Assessments: three tests per term; the third is the end-of-term (or year) test.
+// A result's `term` field holds the assessment name.
+// ---------------------------------------------------------------------------
+export const TERMS = ["Term 1", "Term 2", "Term 3"] as const;
+export const ASSESSMENTS: { term: (typeof TERMS)[number]; name: string }[] = [
+  { term: "Term 1", name: "Term 1 Test 1" },
+  { term: "Term 1", name: "Term 1 Test 2" },
+  { term: "Term 1", name: "End of Term 1 Test" },
+  { term: "Term 2", name: "Term 2 Test 1" },
+  { term: "Term 2", name: "Term 2 Test 2" },
+  { term: "Term 2", name: "End of Term 2 Test" },
+  { term: "Term 3", name: "Term 3 Test 1" },
+  { term: "Term 3", name: "Term 3 Test 2" },
+  { term: "Term 3", name: "End of Year Test" },
+];
+
+/** Position for sorting; legacy values such as "Term 2" sort with their term. */
+export function assessmentOrder(name: string) {
+  const i = ASSESSMENTS.findIndex((a) => a.name === name);
+  if (i >= 0) return i;
+  const t = TERMS.findIndex((term) => name.startsWith(term));
+  return t >= 0 ? t * 3 + 2.5 : -1;
+}
 
 export const DEPARTMENTS = [
   "Mathematics",
@@ -120,11 +170,3 @@ export type Role = "headteacher" | "deputy" | "hod" | "teacher" | "pupil";
 export const SCHOOL_MOTTO = "RISE & SHINE";
 export const SCHOOL_NAME = "YENGWE SECONDARY SCHOOL";
 export const SCHOOL_EMAIL = "info@yengwesecondary.edu.zm";
-
-// Performance threshold aligned with Yengwe grading system
-// Below credit (<55) = red, Credit/Satisfactory (55-59 and below merit) = yellow, Merit/Distinction (60+) = green
-export function getPerformanceColor(avg: number): "red" | "yellow" | "green" {
-  if (avg < 40) return "red";      // Grade 9 (Unsatisfactory)
-  if (avg < 60) return "yellow";   // Grades 5-8 (Credit / Satisfactory)
-  return "green";                  // Grades 1-4 (Distinction / Merit)
-}

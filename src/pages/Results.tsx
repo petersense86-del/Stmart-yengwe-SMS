@@ -4,18 +4,16 @@ import { useAuth } from "../context/AuthContext";
 import { Card, Button, Input, Select, Modal, Badge, Table, EmptyState, PageHeader, StatusLight, RowAction, Alert } from "../components/ui";
 import { toast, confirmDialog } from "../components/feedback";
 import { getDb, saveDb, genId, logActivity, useDbVersion } from "../utils/db";
-import { JUNIOR_SUBJECTS, SENIOR_SUBJECTS, GRADES, getPerformanceColor } from "../data/constants";
+import { FORMS, ASSESSMENTS, TERMS, assessmentOrder, formLabel, isALevel } from "../data/constants";
 import type { User, Result, SubjectScore } from "../types";
-import { yengweGrade, YENGWE_GRADES } from "../types";
+import { formStreams, formSubjects, gradeFor, gradingScale, performanceColor } from "../utils/academics";
 
 const THIS_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: THIS_YEAR - 2015 + 2 }, (_, i) => THIS_YEAR + 1 - i);
-const GRADE_TONE: Record<string, string> = {
-  Distinction: "bg-green-50 ring-green-200 text-green-900",
-  Merit: "bg-emerald-50 ring-emerald-200 text-emerald-900",
-  Credit: "bg-yellow-50 ring-yellow-200 text-yellow-900",
-  Satisfactory: "bg-orange-50 ring-orange-200 text-orange-900",
-  Unsatisfactory: "bg-red-50 ring-red-200 text-red-900",
+const BAND_TONE = {
+  green: "bg-green-50 ring-green-200 text-green-900",
+  yellow: "bg-yellow-50 ring-yellow-200 text-yellow-900",
+  red: "bg-red-50 ring-red-200 text-red-900",
 };
 
 export default function Results() {
@@ -32,7 +30,7 @@ export default function Results() {
   const [selectedGrade, setSelectedGrade] = useState("");
   const [selectedSection, setSelectedSection] = useState("A");
   const [selectedSubject, setSelectedSubject] = useState("");
-  const [selectedTerm, setSelectedTerm] = useState("Term 1");
+  const [selectedTerm, setSelectedTerm] = useState(ASSESSMENTS[0].name);
   const [selectedYear, setSelectedYear] = useState(THIS_YEAR);
   const [scores, setScores] = useState<{ pupilId: string; pupilName: string; score: number | ""; comment?: string; locked?: boolean }[]>([]);
   const [pupilBehaviourComments, setPupilBehaviourComments] = useState<Record<string, string>>({});
@@ -70,14 +68,13 @@ export default function Results() {
         return p && (p.fullName.toLowerCase().includes(s) || (p.pupilId || "").toLowerCase().includes(s));
       });
     }
-    return [...results].sort((a, b) => b.year - a.year || b.term.localeCompare(a.term));
+    return [...results].sort((a, b) => b.year - a.year || assessmentOrder(b.term) - assessmentOrder(a.term));
   }, [db, isPupil, currentUser, termFilter, yearFilter, gradeFilter, search, pupils]);
 
-  const availableSubjects = useMemo(() => {
-    if (selectedGrade && ["8A", "8B", "9A", "9B"].includes(selectedGrade)) return JUNIOR_SUBJECTS;
-    if (selectedGrade) return SENIOR_SUBJECTS;
-    return [];
-  }, [selectedGrade]);
+  const availableSubjects = useMemo(() => (selectedGrade ? formSubjects(db.settings, selectedGrade) : []), [selectedGrade, db]);
+  const streams = formStreams(db.settings, selectedGrade);
+  // Results saved before the three-tests-per-term system keep their old names (e.g. "Term 1").
+  const legacyTerms = useMemo(() => Array.from(new Set(db.results.map((r) => r.term))).filter((t) => !ASSESSMENTS.some((a) => a.name === t)), [db]);
 
   if (!user) return null;
 
@@ -98,8 +95,12 @@ export default function Results() {
       toast.error("You are not assigned to this class and subject.");
       return;
     }
-    const classPupils = pupils.filter((p) => p.grade === selectedGrade && (p.classSection || "A") === selectedSection).sort((a, b) => a.fullName.localeCompare(b.fullName));
-    if (classPupils.length === 0) { toast.info("No pupils are registered in this class yet."); return; }
+    // At A-Level only pupils taking this subject are listed (pupils without a recorded combination are included).
+    const classPupils = pupils
+      .filter((p) => p.grade === selectedGrade && (p.classSection || "A") === selectedSection)
+      .filter((p) => !isALevel(selectedGrade) || !p.subjects?.length || p.subjects.includes(selectedSubject))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName));
+    if (classPupils.length === 0) { toast.info(isALevel(selectedGrade) ? "No pupils in this stream take this subject." : "No pupils are registered in this class yet."); return; }
 
     const fresh = getDb();
     const comments: Record<string, string> = {};
@@ -257,12 +258,12 @@ export default function Results() {
 
       {!isPupil && (
         <Card className="mb-4">
-          <h3 className="font-semibold mb-3 text-sm text-gray-900">Yengwe 9-point grading system</h3>
+          <h3 className="font-semibold mb-3 text-sm text-gray-900">School grading system</h3>
           <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 text-[11px]">
-            {YENGWE_GRADES.map((g) => (
-              <div key={g.grade} className={`px-2 py-1.5 rounded-lg ring-1 ring-inset ${GRADE_TONE[g.name]}`}>
+            {gradingScale(db.settings).map((g, i, scale) => (
+              <div key={`${g.grade}-${i}`} className={`px-2 py-1.5 rounded-lg ring-1 ring-inset ${BAND_TONE[performanceColor(g.min, db.settings)]}`}>
                 <div className="font-bold text-sm leading-none">{g.grade}</div>
-                <div className="mt-1">{g.min}–{g.max}%</div>
+                <div className="mt-1">{g.min}–{i === 0 ? 100 : scale[i - 1].min - 1}%</div>
                 <div className="opacity-80 truncate">{g.name}</div>
               </div>
             ))}
@@ -275,7 +276,7 @@ export default function Results() {
           <h3 className="font-semibold mb-2 text-sm text-gray-900">My assigned classes & subjects</h3>
           <div className="flex flex-wrap gap-1.5">
             {teacherClasses.length === 0 && teacherSubjects.length === 0 && <span className="text-sm text-gray-500">Nothing assigned yet. Your HoD or the headteacher will assign your classes.</span>}
-            {teacherClasses.map((c, i) => <Badge key={i} color="blue">{c.grade} · Section {c.section}</Badge>)}
+            {teacherClasses.map((c, i) => <Badge key={i} color="blue">{formLabel(c.grade)} · Stream {c.section}</Badge>)}
             {teacherSubjects.map((s, i) => <Badge key={`s-${i}`} color="emerald">{s}</Badge>)}
           </div>
         </Card>
@@ -290,16 +291,23 @@ export default function Results() {
             </div>
           )}
           {!isPupil && (
-            <Select aria-label="Grade" value={gradeFilter} onChange={(e) => setGradeFilter(e.target.value)}>
-              <option value="">All grades</option>
-              {GRADES.map((g) => <option key={g} value={g}>Grade {g}</option>)}
+            <Select aria-label="Form" value={gradeFilter} onChange={(e) => setGradeFilter(e.target.value)}>
+              <option value="">All forms</option>
+              {FORMS.map((g) => <option key={g} value={g}>{g}</option>)}
             </Select>
           )}
-          <Select aria-label="Term" value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
-            <option value="">All terms</option>
-            <option value="Term 1">Term 1</option>
-            <option value="Term 2">Term 2</option>
-            <option value="Term 3">Term 3</option>
+          <Select aria-label="Test" value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
+            <option value="">All tests</option>
+            {TERMS.map((t) => (
+              <optgroup key={t} label={t}>
+                {ASSESSMENTS.filter((a) => a.term === t).map((a) => <option key={a.name} value={a.name}>{a.name}</option>)}
+              </optgroup>
+            ))}
+            {legacyTerms.length > 0 && (
+              <optgroup label="Earlier records">
+                {legacyTerms.map((t) => <option key={t} value={t}>{t}</option>)}
+              </optgroup>
+            )}
           </Select>
           <Select aria-label="Year" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
             <option value="">All years</option>
@@ -313,20 +321,20 @@ export default function Results() {
           <EmptyState icon={<BarChart3 className="w-6 h-6" />} message={isPupil ? "No results have been published for you yet. Check back after your teachers publish marks." : "No results match these filters."}
             action={isTeacher ? <Button variant="gold" onClick={openEntry}><Plus className="w-4 h-4" />Enter results</Button> : undefined} />
         ) : (
-          <Table headers={!isPupil ? ["Pupil", "Grade", "Term", "Subjects", "Average", "Status", ""] : ["Term", "Grade", "Subjects", "Average", ""]}>
+          <Table headers={!isPupil ? ["Pupil", "Form", "Test", "Subjects", "Average", "Status", ""] : ["Test", "Form", "Subjects", "Average", ""]}>
             {visibleResults.map((r) => {
               const p = db.users.find((u) => u.id === r.pupilId);
               const publishedCount = r.scores.filter((s) => s.published).length;
               const totalCount = r.scores.length;
               const avg = totalCount > 0 ? r.scores.reduce((a, b) => a + b.score, 0) / totalCount : 0;
-              const color = totalCount > 0 ? getPerformanceColor(avg) : "gray";
+              const color = totalCount > 0 ? performanceColor(avg, db.settings) : "gray";
               const hasUnpublishedMine = !isPupil && r.scores.some((s) => s.teacherId === currentUser.id && !s.published);
               const canPublish = (isAdmin && publishedCount < totalCount) || hasUnpublishedMine;
               return (
                 <tr key={r.id} className="hover:bg-gray-50/80 transition-colors">
                   {!isPupil && <td className="px-4 py-3"><div className="font-medium text-gray-900 min-w-[140px]">{p?.fullName || "Unknown pupil"}</div><div className="text-xs text-gray-500 font-mono">{p?.pupilId}</div></td>}
                   {isPupil && <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{r.term}, {r.year}</td>}
-                  <td className="px-4 py-3"><Badge color="emerald">{r.grade}</Badge></td>
+                  <td className="px-4 py-3"><Badge color="emerald">{formLabel(r.grade)}</Badge></td>
                   {!isPupil && <td className="px-4 py-3 text-sm whitespace-nowrap">{r.term}, {r.year}</td>}
                   <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
                     {isPupil ? <>{totalCount} subject{totalCount !== 1 ? "s" : ""}</> : <><strong className="text-gray-900">{publishedCount}</strong> / {totalCount} published</>}
@@ -359,26 +367,26 @@ export default function Results() {
         {scores.length === 0 ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <Select label="Grade *" value={selectedGrade} onChange={(e) => { setSelectedGrade(e.target.value); setSelectedSubject(""); }}>
+              <Select label="Form *" value={selectedGrade} onChange={(e) => { setSelectedGrade(e.target.value); setSelectedSubject(""); setSelectedSection(formStreams(db.settings, e.target.value)[0]); }}>
                 <option value="">Select…</option>
-                {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+                {FORMS.map((g) => <option key={g} value={g}>{g}</option>)}
               </Select>
-              <Select label="Section" value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)}>
-                <option value="A">A</option>
-                <option value="B">B</option>
-                <option value="C">C</option>
+              <Select label="Stream" value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)}>
+                {streams.map((s) => <option key={s} value={s}>{s}</option>)}
               </Select>
               <Select label="Subject *" value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value)} disabled={!selectedGrade} className="col-span-2 md:col-span-1">
-                <option value="">{selectedGrade ? "Select…" : "Choose a grade first"}</option>
+                <option value="">{selectedGrade ? "Select…" : "Choose a form first"}</option>
                 {availableSubjects.map((s) => {
                   const assigned = currentUser.role !== "teacher" || teacherSubjects.includes(s);
                   return <option key={s} value={s} disabled={!assigned}>{s}{!assigned ? " (not assigned)" : ""}</option>;
                 })}
               </Select>
-              <Select label="Term" value={selectedTerm} onChange={(e) => setSelectedTerm(e.target.value)}>
-                <option value="Term 1">Term 1</option>
-                <option value="Term 2">Term 2</option>
-                <option value="Term 3">Term 3</option>
+              <Select label="Test" value={selectedTerm} onChange={(e) => setSelectedTerm(e.target.value)}>
+                {TERMS.map((t) => (
+                  <optgroup key={t} label={t}>
+                    {ASSESSMENTS.filter((a) => a.term === t).map((a) => <option key={a.name} value={a.name}>{a.name}</option>)}
+                  </optgroup>
+                ))}
               </Select>
               <Select label="Year" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))}>
                 {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -395,7 +403,7 @@ export default function Results() {
             <div className="flex items-center justify-between flex-wrap gap-2 bg-gray-50 ring-1 ring-gray-200 p-3 rounded-xl">
               <div>
                 <div className="font-semibold text-gray-900">{selectedSubject}</div>
-                <div className="text-sm text-gray-500">Grade {selectedGrade} · Section {selectedSection} · {selectedTerm} {selectedYear}</div>
+                <div className="text-sm text-gray-500">{selectedGrade} · Stream {selectedSection} · {selectedTerm} {selectedYear}</div>
               </div>
               <Badge color="blue">{scores.length} pupils</Badge>
             </div>
@@ -411,7 +419,7 @@ export default function Results() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {scores.map((sc, i) => {
-                    const yg = sc.score === "" ? null : yengweGrade(Number(sc.score));
+                    const yg = sc.score === "" ? null : gradeFor(Number(sc.score), db.settings);
                     return (
                       <tr key={sc.pupilId} className="align-top">
                         <td className="px-3 py-2 text-gray-500">{i + 1}</td>
@@ -459,14 +467,14 @@ export default function Results() {
         {modal.result && modal.pupil && (() => {
           const displayScores = modal.result.scores;
           const avg = displayScores.length > 0 ? displayScores.reduce((a, b) => a + b.score, 0) / displayScores.length : 0;
-          const c = displayScores.length > 0 ? getPerformanceColor(avg) : "gray";
+          const c = displayScores.length > 0 ? performanceColor(avg, db.settings) : "gray";
           const publishedCount = displayScores.filter((s) => s.published).length;
           return (
             <div className="space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-3 bg-gray-50 ring-1 ring-gray-200 p-4 rounded-xl">
                 <div>
                   <div className="font-bold text-lg text-gray-900">{modal.pupil.fullName}</div>
-                  <div className="text-sm text-gray-500">Grade {modal.result.grade} · Section {modal.pupil.classSection || "A"} · {modal.result.term} {modal.result.year}</div>
+                  <div className="text-sm text-gray-500">{formLabel(modal.result.grade)} · Stream {modal.pupil.classSection || "A"} · {modal.result.term} {modal.result.year}</div>
                 </div>
                 {displayScores.length > 0 && (
                   <div className="flex items-center gap-2"><StatusLight color={c} size="md" /><span className="font-bold text-2xl text-gray-900">{avg.toFixed(1)}%</span></div>
@@ -474,8 +482,8 @@ export default function Results() {
               </div>
               <Table headers={isPupil ? ["Subject", "Score", "Grade", "Remark", "Teacher"] : ["Subject", "Score", "Status", "Grade", "Remark", "Teacher", ""]}>
                 {displayScores.map((s) => {
-                  const yg = yengweGrade(s.score);
-                  const gradeColor = s.score >= 60 ? "green" : s.score >= 40 ? "yellow" : "red";
+                  const yg = gradeFor(s.score, db.settings);
+                  const gradeColor = performanceColor(s.score, db.settings);
                   return (
                     <tr key={s.subject}>
                       <td className="px-4 py-2.5 font-medium text-gray-900">{s.subject}</td>

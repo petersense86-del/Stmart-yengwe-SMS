@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   BarChart3, Bell, BookOpen, Building2, ChevronsLeft, ChevronsRight, ClipboardList, Cloud, CloudOff, Download, GraduationCap,
-  LayoutDashboard, Loader2, LogOut, Megaphone, Menu, MessageSquare, Settings, UserRound, Users, X, type LucideIcon,
+  Layers, LayoutDashboard, Loader2, LogOut, Megaphone, Menu, MessageSquare, Settings, UserRound, Users, X, type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { peekDb, useDbVersion, useSyncStatus } from "../utils/db";
@@ -24,6 +24,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "downloads", label: "Download Logs", icon: Download, roles: ["headteacher"] },
   { id: "activity", label: "Activity Logs", icon: ClipboardList, roles: ["headteacher"] },
   { id: "updates", label: "System Updates", icon: Bell, roles: ["headteacher", "deputy", "hod", "teacher", "pupil"] },
+  { id: "academics", label: "Forms & Grading", icon: Layers, roles: ["headteacher", "deputy"] },
   { id: "settings", label: "Settings", icon: Settings, roles: ["headteacher", "deputy"] },
 ];
 

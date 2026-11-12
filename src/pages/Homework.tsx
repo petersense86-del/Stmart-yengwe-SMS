@@ -4,10 +4,9 @@ import { useAuth } from "../context/AuthContext";
 import { Card, Button, Input, Select, Modal, Textarea, Badge, EmptyState, PageHeader, Alert } from "../components/ui";
 import { toast, confirmDialog } from "../components/feedback";
 import { getDb, saveDb, genId, logActivity, useDbVersion } from "../utils/db";
-import { GRADES, JUNIOR_SUBJECTS, SENIOR_SUBJECTS } from "../data/constants";
+import { FORMS, formLabel } from "../data/constants";
 import type { Homework } from "../types";
-
-const ALL_SUBJECTS = Array.from(new Set([...JUNIOR_SUBJECTS, ...SENIOR_SUBJECTS]));
+import { formStreams, formSubjects } from "../utils/academics";
 
 function dueLabel(due: string) {
   const days = Math.round((new Date(due).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000);
@@ -95,7 +94,8 @@ export default function HomeworkPage() {
     toast.success("Homework deleted.");
   }
 
-  const subjectOptions = isRestrictedTeacher ? mySubjects : ALL_SUBJECTS;
+  const subjectOptions = isRestrictedTeacher ? mySubjects : formSubjects(db.settings, form.grade);
+  const streamOptions = formStreams(db.settings, form.grade);
   const today = new Date().toISOString().slice(0, 10);
 
   return (
@@ -126,7 +126,7 @@ export default function HomeworkPage() {
                 </div>
                 <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                   <Badge color="blue">{hw.subject}</Badge>
-                  <Badge color="gray">{hw.grade} · {hw.section}</Badge>
+                  <Badge color="gray">{formLabel(hw.grade)} · {hw.section}</Badge>
                 </div>
                 <p className="text-sm text-gray-600 mt-3 line-clamp-3 flex-1">{hw.description}</p>
                 <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500 gap-2">
@@ -152,7 +152,7 @@ export default function HomeworkPage() {
           <div className="space-y-4 text-sm">
             <div className="flex gap-1.5 flex-wrap">
               <Badge color="blue">{modal.hw.subject}</Badge>
-              <Badge color="gray">{modal.hw.grade} · {modal.hw.section}</Badge>
+              <Badge color="gray">{formLabel(modal.hw.grade)} · {modal.hw.section}</Badge>
               <Badge color={dueLabel(modal.hw.dueDate).color}>{dueLabel(modal.hw.dueDate).text}</Badge>
             </div>
             <p className="whitespace-pre-wrap text-gray-800 leading-relaxed">{modal.hw.description}</p>
@@ -167,17 +167,16 @@ export default function HomeworkPage() {
             {error && <Alert tone="error">{error}</Alert>}
             <Input label="Title" value={form.title || ""} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Algebra exercise 4B" autoFocus />
             <div className="grid grid-cols-2 gap-3">
-              <Select label="Grade" value={form.grade || ""} onChange={(e) => setForm({ ...form, grade: e.target.value as Homework["grade"] })}>
+              <Select label="Form" value={form.grade || ""} onChange={(e) => setForm({ ...form, grade: e.target.value, section: formStreams(db.settings, e.target.value)[0] })}>
                 <option value="">Select…</option>
-                {GRADES.map((g) => {
+                {FORMS.map((g) => {
                   const assigned = !isRestrictedTeacher || myClasses.some((c) => c.grade === g);
                   return <option key={g} value={g} disabled={!assigned}>{g}{!assigned ? " (not assigned)" : ""}</option>;
                 })}
               </Select>
-              <Select label="Section" value={form.section || "A"} onChange={(e) => setForm({ ...form, section: e.target.value })}>
-                <option value="A">A</option>
-                <option value="B">B</option>
-                <option value="C">C</option>
+              <Select label="Stream" value={form.section || "A"} onChange={(e) => setForm({ ...form, section: e.target.value })}>
+                {form.section && !streamOptions.includes(form.section) && <option value={form.section}>{form.section}</option>}
+                {streamOptions.map((s) => <option key={s} value={s}>{s}</option>)}
               </Select>
             </div>
             <Select label="Subject" value={form.subject || ""} onChange={(e) => setForm({ ...form, subject: e.target.value })}>

@@ -24,7 +24,8 @@ export interface User {
   address?: string;
   // teacher-specific
   teacherId?: string;
-  subjects?: string[]; // subjects assigned
+  subjects?: string[]; // teachers: subjects assigned; Form 5–6 pupils: chosen A-Level subjects
+  pathway?: string; // Form 5–6 pupils: A-Level pathway
   classes?: { grade: Grade; section: string }[];
   departments?: Department[];
   qualifications?: string;
@@ -53,7 +54,8 @@ export interface SubjectScore {
   publishedAt?: string;
 }
 
-// Yengwe 9-point grading system
+// A band in the school's grading system. YENGWE_GRADES is the default scale;
+// the school can replace it on the Forms & Grading page.
 export interface YengweGrade {
   grade: string;
   name: string; // e.g. Distinction, Merit, Credit, Satisfactory, Unsatisfactory
@@ -73,9 +75,6 @@ export const YENGWE_GRADES: YengweGrade[] = [
   { grade: "9", name: "Unsatisfactory", min: 0, max: 39 },
 ];
 
-export function yengweGrade(score: number): YengweGrade {
-  return YENGWE_GRADES.find((g) => score >= g.min && score <= g.max) || YENGWE_GRADES[YENGWE_GRADES.length - 1];
-}
 
 
 export interface Result {
@@ -190,6 +189,13 @@ export interface SchoolSettings {
   headteacherRegistered: boolean;
   deputyRegistered: boolean;
   setupComplete: boolean;
+  // Academic setup (Forms & Grading page)
+  gradingScale?: YengweGrade[]; // defaults to YENGWE_GRADES
+  passMark?: number; // averages below this show red (default 40)
+  goodMark?: number; // averages at or above this show green (default 60)
+  formSubjects?: Record<string, string[]>; // subjects offered per form
+  formStreams?: Record<string, string[]>; // streams per form, e.g. A, B
+  formPathways?: Record<string, string[]>; // A-Level pathways offered (Forms 5–6)
 }
 
 export interface GalleryItem {

@@ -21,6 +21,7 @@ const Messages = lazy(() => import("./pages/Messages"));
 const DownloadLogs = lazy(() => import("./pages/AdminPages").then((m) => ({ default: m.DownloadLogs })));
 const ActivityLogs = lazy(() => import("./pages/AdminPages").then((m) => ({ default: m.ActivityLogs })));
 const SystemUpdates = lazy(() => import("./pages/AdminPages").then((m) => ({ default: m.SystemUpdates })));
+const AcademicSetup = lazy(() => import("./pages/AcademicSetup"));
 const SettingsPage = lazy(() => import("./pages/AdminPages").then((m) => ({ default: m.SettingsPage })));
 
 // After sign-in, fetch the common pages' code in the background so opening them feels instant.
@@ -49,6 +50,7 @@ const TITLES: Record<string, string> = {
   downloads: "Download Logs",
   activity: "Activity Logs",
   updates: "System Updates",
+  academics: "Forms & Grading",
   settings: "Settings",
 };
 
@@ -93,6 +95,9 @@ function Dashboard() {
         if (user!.role !== "headteacher") return <ForbiddenPage />;
         return <ActivityLogs />;
       case "updates": return <SystemUpdates />;
+      case "academics":
+        if (user!.role !== "headteacher" && user!.role !== "deputy") return <ForbiddenPage />;
+        return <AcademicSetup />;
       case "settings":
         if (user!.role !== "headteacher" && user!.role !== "deputy") return <ForbiddenPage />;
         return <SettingsPage />;

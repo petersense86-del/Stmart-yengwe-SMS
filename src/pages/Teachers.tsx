@@ -6,11 +6,10 @@ import { toast, confirmDialog, showCredentials } from "../components/feedback";
 import { getDb, saveDb, logActivity, refreshData, useDbVersion } from "../utils/db";
 import { adminUsers } from "../lib/supabase";
 import { readImage, IMAGE_SIZES } from "../utils/image";
-import { DEPARTMENTS, JUNIOR_SUBJECTS, SENIOR_SUBJECTS, GRADES } from "../data/constants";
+import { DEPARTMENTS, FORMS, formLabel } from "../data/constants";
 import type { Department, Grade } from "../data/constants";
 import type { User } from "../types";
-
-const ALL_SUBJECTS = Array.from(new Set([...JUNIOR_SUBJECTS, ...SENIOR_SUBJECTS]));
+import { allOfferedSubjects, formStreams } from "../utils/academics";
 
 export default function Teachers() {
   const { user } = useAuth();
@@ -34,6 +33,9 @@ export default function Teachers() {
   const isHOD = currentUser.role === "hod";
   const isIT = isAdmin || (isHOD && currentUser.hodDepartment === "IT Department");
   const hasDeputy = db.users.some((u) => u.role === "deputy");
+  // Keep already-assigned subjects visible even if the school no longer offers them, so they can be removed.
+  const subjectOptions = Array.from(new Set([...allOfferedSubjects(db.settings), ...assignSubjects]));
+  const newStreams = formStreams(db.settings, newGrade);
 
   const staff = db.users
     .filter((u) => u.role === "teacher" || u.role === "hod" || (isHead && u.role === "deputy"))
@@ -136,7 +138,7 @@ export default function Teachers() {
   }
   function addClass() {
     if (!newGrade) return;
-    const section = newSection || "A";
+    const section = newSection || newStreams[0];
     if (assignClasses.some((c) => c.grade === newGrade && c.section === section)) return;
     setAssignClasses([...assignClasses, { grade: newGrade as Grade, section }]);
     setNewGrade(""); setNewSection("");
@@ -215,7 +217,7 @@ export default function Teachers() {
                 <td className="px-4 py-3 text-xs font-mono text-gray-600">{t.teacherId || "—"}</td>
                 <td className="px-4 py-3 text-xs max-w-[240px]">
                   <div className="text-gray-800 truncate">{(t.subjects || []).join(", ") || <span className="text-gray-400">No subjects</span>}</div>
-                  <div className="text-gray-500 truncate">{(t.classes || []).map((c) => `${c.grade}${c.section && !c.grade.endsWith(c.section) ? c.section : ""}`).join(", ")}</div>
+                  <div className="text-gray-500 truncate">{(t.classes || []).map((c) => `${formLabel(c.grade)}${c.section && !c.grade.endsWith(c.section) ? ` ${c.section}` : ""}`).join(", ")}</div>
                 </td>
                 <td className="px-4 py-3 text-xs text-gray-600">{(t.departments || []).join(", ") || "—"}</td>
                 <td className="px-4 py-3">
@@ -246,7 +248,7 @@ export default function Teachers() {
                 <span className="text-xs text-gray-500">{assignSubjects.length} selected</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5 max-h-64 overflow-y-auto rounded-xl ring-1 ring-gray-200 p-2">
-                {ALL_SUBJECTS.map((s) => (
+                {subjectOptions.map((s) => (
                   <label key={s} className={`flex items-center gap-2 text-sm px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${assignSubjects.includes(s) ? "bg-emerald-50 ring-1 ring-emerald-300 text-emerald-900" : "hover:bg-gray-50"}`}>
                     <input type="checkbox" className="accent-emerald-600 w-4 h-4" checked={assignSubjects.includes(s)} onChange={() => toggleSubject(s)} />
                     <span>{s}</span>
@@ -258,18 +260,20 @@ export default function Teachers() {
             <div>
               <h4 className="font-semibold text-gray-900 mb-2">Classes taught</h4>
               <div className="flex flex-col sm:flex-row gap-2 mb-3">
-                <Select aria-label="Grade" value={newGrade} onChange={(e) => setNewGrade(e.target.value)} className="sm:w-40">
-                  <option value="">Select grade…</option>
-                  {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+                <Select aria-label="Form" value={newGrade} onChange={(e) => { setNewGrade(e.target.value); setNewSection(""); }} className="sm:w-40">
+                  <option value="">Select form…</option>
+                  {FORMS.map((g) => <option key={g} value={g}>{g}</option>)}
                 </Select>
-                <Input aria-label="Section" placeholder="Section (A/B)" value={newSection} onChange={(e) => setNewSection(e.target.value.toUpperCase())} maxLength={2} className="sm:w-32" />
+                <Select aria-label="Stream" value={newSection || newStreams[0]} onChange={(e) => setNewSection(e.target.value)} disabled={!newGrade} className="sm:w-32">
+                  {newStreams.map((s) => <option key={s} value={s}>Stream {s}</option>)}
+                </Select>
                 <Button onClick={addClass} disabled={!newGrade}><Plus className="w-4 h-4" />Add class</Button>
               </div>
               <div className="flex flex-wrap gap-2">
                 {assignClasses.length === 0 ? <span className="text-sm text-gray-500">No classes added yet.</span> : assignClasses.map((c, i) => (
                   <span key={i} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-800 ring-1 ring-inset ring-blue-600/20">
-                    {c.grade} · Section {c.section}
-                    <button onClick={() => setAssignClasses(assignClasses.filter((_, idx) => idx !== i))} aria-label={`Remove ${c.grade} section ${c.section}`} className="p-0.5 rounded-full hover:bg-blue-100"><X className="w-3 h-3" /></button>
+                    {formLabel(c.grade)} · Stream {c.section}
+                    <button onClick={() => setAssignClasses(assignClasses.filter((_, idx) => idx !== i))} aria-label={`Remove ${formLabel(c.grade)} stream ${c.section}`} className="p-0.5 rounded-full hover:bg-blue-100"><X className="w-3 h-3" /></button>
                   </span>
                 ))}
               </div>

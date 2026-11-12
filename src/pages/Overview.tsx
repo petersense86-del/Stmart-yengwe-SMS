@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { BarChart3, BookOpen, ChevronRight, GraduationCap, Library, Megaphone, NotebookPen, Users, type LucideIcon } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { Card, Badge, StatusLight } from "../components/ui";
-import { getDb, useDbVersion } from "../utils/db";
+import { getDb, peekDb, useDbVersion } from "../utils/db";
 import { supabase } from "../lib/supabase";
-import { getPerformanceColor, JUNIOR_SUBJECTS, SENIOR_SUBJECTS } from "../data/constants";
+import { FORM_INFO, formLabel, isALevel, isForm } from "../data/constants";
+import { performanceColor, pupilSubjects } from "../utils/academics";
 
 interface SchoolStats { pupils: number; teachers: number; hods: number; publishedResults: number; schoolAvg: number }
 
@@ -63,14 +64,14 @@ export default function Overview({ onNavigate }: { onNavigate?: (tab: string) =>
   if (!user || !stats) return null;
 
   const schoolAvg = Number(school?.schoolAvg ?? 0);
-  const schoolStatus = schoolAvg === 0 ? "gray" : getPerformanceColor(schoolAvg);
-  const isJunior = !!user.grade && ["8A", "8B", "9A", "9B"].includes(user.grade);
+  const settings = peekDb().settings;
+  const schoolStatus = schoolAvg === 0 ? "gray" : performanceColor(schoolAvg, settings);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const firstName = user.fullName.replace(/^(Mr|Mrs|Ms|Miss|Dr)\.?\s+/i, "").split(" ")[0];
   const roleLine: Record<string, string> = {
     headteacher: "Headteacher", deputy: "Deputy Headteacher", hod: `Head of ${user.hodDepartment || "Department"}`,
-    teacher: "Teacher", pupil: user.grade ? `Grade ${user.grade}${user.classSection ? ` · Section ${user.classSection}` : ""}` : "Pupil",
+    teacher: "Teacher", pupil: user.grade ? `${formLabel(user.grade)}${user.classSection ? ` · Stream ${user.classSection}` : ""}` : "Pupil",
   };
 
   return (
@@ -104,7 +105,7 @@ export default function Overview({ onNavigate }: { onNavigate?: (tab: string) =>
               <p className="text-sm text-gray-500">Average across all your published results</p>
             </div>
             <div className="flex items-center gap-3">
-              <StatusLight size="lg" color={stats.pupilAvg === 0 ? "gray" : getPerformanceColor(stats.pupilAvg)} />
+              <StatusLight size="lg" color={stats.pupilAvg === 0 ? "gray" : performanceColor(stats.pupilAvg, settings)} />
               <div>
                 <div className="text-2xl font-bold text-gray-900 tabular-nums">{stats.pupilAvg.toFixed(1)}%</div>
                 <div className="text-xs text-gray-500">
@@ -136,7 +137,7 @@ export default function Overview({ onNavigate }: { onNavigate?: (tab: string) =>
               <p className="text-sm text-gray-500">No classes assigned yet.</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
-                {(user.classes || []).map((c, i) => <Badge key={i} color="blue">{c.grade} · Section {c.section}</Badge>)}
+                {(user.classes || []).map((c, i) => <Badge key={i} color="blue">{formLabel(c.grade)} · Stream {c.section}</Badge>)}
               </div>
             )}
           </Card>
@@ -205,15 +206,15 @@ export default function Overview({ onNavigate }: { onNavigate?: (tab: string) =>
       {user.role === "pupil" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-2">
-            <SectionTitle icon={BookOpen}>Your subjects · {isJunior ? "Junior Secondary" : "Senior Secondary"}</SectionTitle>
+            <SectionTitle icon={BookOpen}>Your subjects{isForm(user.grade) ? ` · ${FORM_INFO[user.grade].level}` : ""}{user.pathway ? ` · ${user.pathway}` : ""}</SectionTitle>
             <div className="flex flex-wrap gap-1.5">
-              {(isJunior ? JUNIOR_SUBJECTS : SENIOR_SUBJECTS).map((s) => <Badge key={s} color="emerald">{s}</Badge>)}
+              {pupilSubjects(user, settings).map((s) => <Badge key={s} color="emerald">{s}</Badge>)}
             </div>
           </Card>
           <Card>
             <h3 className="font-semibold text-gray-900 mb-3">Quick info</h3>
             <dl className="space-y-2 text-sm">
-              {([["Grade", user.grade], ["Class section", user.classSection || "A"], ["Pupil ID", user.pupilId || "N/A"], ["Province", user.province], ["District", user.district]] as [string, string | undefined][]).map(([k, v]) => (
+              {([["Form", formLabel(user.grade)], ["Stream", user.classSection || "A"], ...(isALevel(user.grade) ? [["Pathway", user.pathway]] : []), ["Pupil ID", user.pupilId || "N/A"], ["Province", user.province], ["District", user.district]] as [string, string | undefined][]).map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-3"><dt className="text-gray-500">{k}</dt><dd className="font-medium text-gray-900 text-right">{v || "—"}</dd></div>
               ))}
             </dl>
