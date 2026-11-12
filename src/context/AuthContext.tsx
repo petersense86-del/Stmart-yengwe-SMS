@@ -75,11 +75,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .subscribe();
     const interval = window.setInterval(() => refreshSoon(), 90_000);
     const onFocus = () => { if (document.visibilityState === "visible") refreshIfStale(30_000).catch(() => undefined); };
+    // Back online: re-send anything that failed and reload.
+    const onOnline = () => refreshSoon();
     document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("online", onOnline);
     return () => {
       window.clearTimeout(timer);
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("online", onOnline);
       supabase.removeChannel(channel);
     };
   }, [status, userId]);

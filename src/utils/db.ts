@@ -300,11 +300,34 @@ export function saveDb(db: Database): void {
   const writes = ops.filter((o) => o.kind !== "delete");
   const deletes = ops.filter((o) => o.kind === "delete").reverse();
   enqueue(async () => {
-    for (const op of [...writes, ...deletes]) await runOp(op);
+    const all = [...writes, ...deletes];
+    for (let i = 0; i < all.length; i++) {
+      try {
+        await runOp(all[i]);
+      } catch (e) {
+        markUnsaved(all.slice(i));
+        throw e;
+      }
+    }
   });
 }
 
-async function runOp(op: { spec: TableSpec; kind: "insert" | "update" | "delete"; id: string; row?: Row }) {
+type Op = { spec: TableSpec; kind: "insert" | "update" | "delete"; id: string; row?: Row };
+let hasUnsaved = false;
+
+// Forget that these ops reached the server, so the next save sends them again.
+// A successful reload rebuilds the snapshot and supersedes this.
+function markUnsaved(ops: Op[]) {
+  for (const op of ops) {
+    const snap = snapshot.get(op.spec.table);
+    if (!snap) continue;
+    if (op.kind === "insert") snap.delete(op.id);
+    else snap.set(op.id, "");
+  }
+  hasUnsaved = true;
+}
+
+async function runOp(op: Op) {
   const { spec } = op;
   const t = supabase.from(spec.table);
   let res;
@@ -417,6 +440,11 @@ let lastFullRefresh = 0;
 
 /** Load (or reload) everything for the signed-in user, after pending writes finish. */
 export async function refreshData(collections?: CollectionKey[]): Promise<void> {
+  // Re-send changes that failed earlier (e.g. while offline) before the reload overwrites them.
+  if (hasUnsaved) {
+    hasUnsaved = false;
+    saveDb(getDb());
+  }
   await flushWrites();
   const startedAt = Date.now();
   await loadCollections(collections);
@@ -432,6 +460,7 @@ export function refreshIfStale(maxAgeMs: number): Promise<void> {
 /** Forget all cached data (on sign-out). */
 export function resetDb(): void {
   lastFullRefresh = 0;
+  hasUnsaved = false;
   cache = emptyDb();
   snapshot.clear();
   bump();
