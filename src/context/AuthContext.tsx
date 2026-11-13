@@ -73,8 +73,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .channel("ypms-messages")
       .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => refreshSoon(["messages"]))
       .subscribe();
-    const interval = window.setInterval(() => refreshSoon(), 90_000);
-    const onFocus = () => { if (document.visibilityState === "visible") refreshIfStale(30_000).catch(() => undefined); };
+    // Small collections refresh every 2 minutes; the full reload (every pupil, result and photo)
+    // only happens when returning to the app after 5 minutes away, to save mobile data.
+    const interval = window.setInterval(() => refreshSoon(["notices", "homework", "systemUpdates"]), 120_000);
+    const onFocus = () => { if (document.visibilityState === "visible") refreshIfStale(5 * 60_000).catch(() => undefined); };
     // Back online: re-send anything that failed and reload.
     const onOnline = () => refreshSoon();
     document.addEventListener("visibilitychange", onFocus);

@@ -89,6 +89,7 @@ export interface Result {
   publishedBy?: string;
   classTeacherComment?: string;   // overall behavioural/academic comment from class teacher
   classTeacherId?: string;
+  gradingScale?: YengweGrade[];   // the scale in force when marks were last saved, so later changes don't regrade old reports
   createdAt: string;
   updatedAt: string;
 }
@@ -196,6 +197,8 @@ export interface SchoolSettings {
   formSubjects?: Record<string, string[]>; // subjects offered per form
   formStreams?: Record<string, string[]>; // streams per form, e.g. A, B
   formPathways?: Record<string, string[]>; // A-Level pathways offered (Forms 5–6)
+  classTeachers?: Record<string, Record<string, string>>; // form -> stream -> class teacher's user id
+  lastPromotionYear?: number; // year the year-end promotion was last run
 }
 
 export interface GalleryItem {

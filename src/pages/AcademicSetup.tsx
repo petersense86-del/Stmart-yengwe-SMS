@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
-import { Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
+import { ArrowRight, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { Card, Button, Input, Badge, PageHeader, Alert } from "../components/ui";
+import { Card, Button, Input, Select, Badge, PageHeader, Alert } from "../components/ui";
 import { toast, confirmDialog } from "../components/feedback";
 import { getDb, saveDb, logActivity, useDbVersion } from "../utils/db";
-import { A_LEVEL_MAX_SUBJECTS, A_LEVEL_MIN_SUBJECTS, A_LEVEL_PATHWAYS, FORMS, FORM_INFO, isALevel, type Form } from "../data/constants";
+import { A_LEVEL_MAX_SUBJECTS, A_LEVEL_MIN_SUBJECTS, A_LEVEL_PATHWAYS, FORMS, FORM_INFO, formLabel, isALevel, isForm, type Form } from "../data/constants";
 import { YENGWE_GRADES, type SchoolSettings, type YengweGrade } from "../types";
 import { formPathways, formStreams, formSubjects, gradingScale, performanceColor, subjectCatalogue } from "../utils/academics";
 
-const TABS = ["grading", ...FORMS] as const;
+const TABS = ["grading", ...FORMS, "promotion"] as const;
 type Tab = (typeof TABS)[number];
 
 const BAND_TONE = { green: "bg-green-50 text-green-900", yellow: "bg-yellow-50 text-yellow-900", red: "bg-red-50 text-red-900" };
@@ -35,11 +35,11 @@ export default function AcademicSetup() {
             key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
             className={`whitespace-nowrap px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${tab === t ? "bg-emerald-700 text-white shadow-sm" : "bg-white ring-1 ring-gray-200 text-gray-700 hover:bg-gray-50"}`}
           >
-            {t === "grading" ? "Grading system" : t}
+            {t === "grading" ? "Grading system" : t === "promotion" ? "Promotion" : t}
           </button>
         ))}
       </div>
-      {tab === "grading" ? <GradingEditor /> : <FormSetup key={tab} form={tab} />}
+      {tab === "grading" ? <GradingEditor /> : tab === "promotion" ? <Promotion /> : <FormSetup key={tab} form={tab} />}
     </div>
   );
 }
@@ -170,13 +170,15 @@ function FormSetup({ form }: { form: Form }) {
   const [subjects, setSubjects] = useState<string[]>(() => formSubjects(settings, form));
   const [streams, setStreams] = useState<string[]>(() => formStreams(settings, form));
   const [pathways, setPathways] = useState<string[]>(() => formPathways(settings, form).map((p) => p.name));
+  const [classTeachers, setClassTeachers] = useState<Record<string, string>>(() => ({ ...settings.classTeachers?.[form] }));
   const [newSubject, setNewSubject] = useState("");
   const [newStream, setNewStream] = useState("");
   const [error, setError] = useState("");
 
   const catalogue = Array.from(new Set([...subjectCatalogue(form), ...subjects]));
   const pupils = db.users.filter((u) => u.role === "pupil" && u.grade === form);
-  const teachers = db.users.filter((u) => (u.role === "teacher" || u.role === "hod") && u.classes?.some((c) => c.grade === form));
+  const staff = db.users.filter((u) => u.role === "teacher" || u.role === "hod").sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const teachers = staff.filter((u) => u.classes?.some((c) => c.grade === form));
   const orphanStreams = Array.from(new Set(pupils.map((p) => p.classSection || "A"))).filter((s) => !streams.includes(s));
 
   const toggle = (list: string[], set: (v: string[]) => void, item: string) => set(list.includes(item) ? list.filter((x) => x !== item) : [...list, item]);
@@ -204,6 +206,7 @@ function FormSetup({ form }: { form: Form }) {
       {
         formSubjects: { ...settings.formSubjects, [form]: subjects },
         formStreams: { ...settings.formStreams, [form]: streams },
+        classTeachers: { ...settings.classTeachers, [form]: Object.fromEntries(streams.filter((s) => classTeachers[s]).map((s) => [s, classTeachers[s]])) },
         ...(aLevel ? { formPathways: { ...settings.formPathways, [form]: pathways } } : {}),
       },
       `Updated ${form} subjects and streams`,
@@ -275,6 +278,20 @@ function FormSetup({ form }: { form: Form }) {
           <Input aria-label="New stream" placeholder="e.g. C" value={newStream} onChange={(e) => setNewStream(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addStream(); }} maxLength={12} />
           <Button variant="ghost" onClick={addStream} disabled={!newStream.trim()}><Plus className="w-4 h-4" />Add</Button>
         </div>
+        {streams.length > 0 && (
+          <div className="mt-4">
+            <h4 className="text-sm font-semibold text-gray-900 mb-1">Class teachers</h4>
+            <p className="text-xs text-gray-500 mb-2">The class teacher writes the behaviour comment and signs report cards for their stream.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {streams.map((s) => (
+                <Select key={s} label={`${form} ${s}`} value={classTeachers[s] || ""} onChange={(e) => setClassTeachers({ ...classTeachers, [s]: e.target.value })}>
+                  <option value="">Not assigned</option>
+                  {staff.map((t) => <option key={t.id} value={t.id}>{t.fullName}</option>)}
+                </Select>
+              ))}
+            </div>
+          </div>
+        )}
         {orphanStreams.length > 0 && (
           <Alert tone="warning" className="mt-3">Some pupils are still in stream {orphanStreams.join(", ")}, which isn't in this list. Edit those pupils to move them.</Alert>
         )}
@@ -318,6 +335,125 @@ function FormSetup({ form }: { form: Form }) {
       <div className="flex justify-end">
         <Button variant="gold" onClick={handleSave}><Save className="w-4 h-4" />Save {form} setup</Button>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Year-end promotion and moving pupils off the old grade system
+// ---------------------------------------------------------------------------
+const NEXT_FORM: Partial<Record<Form, Form>> = { "Form 1": "Form 2", "Form 2": "Form 3", "Form 3": "Form 4", "Form 5": "Form 6" };
+
+/** "10A" -> "A"; "12" -> undefined. */
+const legacyStream = (grade: string) => grade.match(/[A-Za-z]+$/)?.[0].toUpperCase();
+
+function Promotion() {
+  const { user } = useAuth();
+  const version = useDbVersion();
+  const db = useMemo(() => getDb(), [version]);
+  const year = new Date().getFullYear();
+  const pupils = db.users.filter((u) => u.role === "pupil");
+  const count = (form: string) => pupils.filter((p) => p.grade === form).length;
+
+  const legacyGrades = Array.from(new Set([
+    ...pupils.map((p) => p.grade),
+    ...db.users.flatMap((u) => (u.classes || []).map((c) => c.grade)),
+  ].filter((g): g is string => !!g && !isForm(g)))).sort((a, b) => parseInt(a) - parseInt(b) || a.localeCompare(b));
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+
+  async function promote() {
+    const moving = (Object.keys(NEXT_FORM) as Form[]).reduce((n, f) => n + count(f), 0);
+    if (moving === 0) { toast.info("There are no pupils in Forms 1–3 or Form 5 to promote."); return; }
+    const again = db.settings.lastPromotionYear === year;
+    const ok = await confirmDialog({
+      title: again ? `Promote again in ${year}?` : "Promote all pupils?",
+      message: `${again ? `Pupils were already promoted in ${year}. Running it again moves them up another form. ` : ""}${moving} pupil${moving === 1 ? "" : "s"} will move up one form, keeping their stream. Form 4 and Form 6 pupils stay where they are.`,
+      confirmLabel: "Promote",
+      danger: again,
+    });
+    if (!ok) return;
+    const db2 = getDb();
+    // Map every pupil from the form they are in now, so nobody moves twice.
+    for (const p of db2.users) {
+      const next = p.role === "pupil" && isForm(p.grade) ? NEXT_FORM[p.grade] : undefined;
+      if (next) p.grade = next;
+    }
+    db2.settings = { ...db2.settings, lastPromotionYear: year };
+    saveDb(db2);
+    if (user) logActivity(user.id, user.fullName, user.role, "Ran year-end promotion", `${moving} pupils`);
+    toast.success(`${moving} pupil${moving === 1 ? "" : "s"} promoted.`);
+  }
+
+  async function moveLegacy() {
+    const chosen = Object.entries(mapping).filter(([, form]) => form);
+    if (chosen.length === 0) { toast.warning("Choose a form for at least one old grade."); return; }
+    const affected = pupils.filter((p) => chosen.some(([g]) => g === p.grade)).length;
+    const ok = await confirmDialog({
+      title: "Move pupils to forms?",
+      message: `${affected} pupil${affected === 1 ? "" : "s"} and any teacher class allocations on these grades will move: ${chosen.map(([g, f]) => `Grade ${g} → ${f}`).join(", ")}. Past results keep their original grade.`,
+      confirmLabel: "Move",
+    });
+    if (!ok) return;
+    const db2 = getDb();
+    const target = new Map(chosen);
+    for (const u of db2.users) {
+      if (u.role === "pupil" && u.grade && target.has(u.grade)) {
+        u.classSection = legacyStream(u.grade) || u.classSection || "A";
+        u.grade = target.get(u.grade)!;
+      }
+      if (u.classes?.some((c) => target.has(c.grade))) {
+        const moved = u.classes.map((c) => (target.has(c.grade) ? { grade: target.get(c.grade)!, section: legacyStream(c.grade) || c.section } : c));
+        u.classes = moved.filter((c, i) => moved.findIndex((x) => x.grade === c.grade && x.section === c.section) === i);
+      }
+    }
+    saveDb(db2);
+    if (user) logActivity(user.id, user.fullName, user.role, "Moved pupils from old grades to forms", chosen.map(([g, f]) => `${g}→${f}`).join(", "));
+    setMapping({});
+    toast.success(`${affected} pupil${affected === 1 ? "" : "s"} moved to their new forms.`);
+  }
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <h3 className="font-semibold text-gray-900 mb-1">Year-end promotion</h3>
+        <p className="text-sm text-gray-500 mb-4">Moves every pupil up one form at the end of the school year, keeping their stream. Run it once, after the End of Year Test results are published.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+          {(Object.entries(NEXT_FORM) as [Form, Form][]).map(([from, to]) => (
+            <div key={from} className="flex items-center gap-2 text-sm rounded-lg ring-1 ring-gray-200 px-3 py-2">
+              <span className="font-medium text-gray-900">{from}</span><ArrowRight className="w-4 h-4 text-gray-400" /><span className="font-medium text-gray-900">{to}</span>
+              <span className="ml-auto text-xs text-gray-500">{count(from)} pupil{count(from) === 1 ? "" : "s"}</span>
+            </div>
+          ))}
+        </div>
+        <Alert tone="info" className="mb-4">
+          Form 4 ({count("Form 4")} pupils) finish Ordinary Level: move those continuing to A-Level into Form 5 individually, because each needs a pathway and subjects. Form 6 ({count("Form 6")} pupils) have completed school.
+        </Alert>
+        {db.settings.lastPromotionYear && <p className="text-xs text-gray-500 mb-3">Last promotion: {db.settings.lastPromotionYear}</p>}
+        <Button variant="gold" onClick={promote}>Promote pupils</Button>
+      </Card>
+
+      <Card>
+        <h3 className="font-semibold text-gray-900 mb-1">Move pupils from old grades</h3>
+        {legacyGrades.length === 0 ? (
+          <p className="text-sm text-gray-500">Every pupil and teacher allocation already uses Forms. Nothing to move.</p>
+        ) : (
+          <>
+            <p className="text-sm text-gray-500 mb-4">Choose the form for each old grade. A stream letter in the old grade (e.g. the A in 10A) becomes the pupil's stream.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              {legacyGrades.map((g) => {
+                const n = pupils.filter((p) => p.grade === g).length;
+                return (
+                  <Select key={g} label={`${formLabel(g)} · ${n} pupil${n === 1 ? "" : "s"}`} value={mapping[g] || ""} onChange={(e) => setMapping({ ...mapping, [g]: e.target.value })}>
+                    <option value="">Leave as is</option>
+                    {FORMS.map((f) => <option key={f} value={f}>{f}{legacyStream(g) ? ` ${legacyStream(g)}` : ""}</option>)}
+                  </Select>
+                );
+              })}
+            </div>
+            <Button variant="gold" onClick={moveLegacy}>Move pupils</Button>
+          </>
+        )}
+      </Card>
     </div>
   );
 }

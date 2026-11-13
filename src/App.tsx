@@ -40,7 +40,7 @@ function preloadPages() {
 const TITLES: Record<string, string> = {
   overview: "Dashboard",
   biography: "About School",
-  messages: "Messages & Calls",
+  messages: "Messages",
   profile: "My Profile",
   pupils: "Pupils",
   teachers: "Teachers & HoDs",
@@ -69,8 +69,8 @@ function Dashboard() {
   function changeTab(tab: string) {
     setActiveTab(tab);
     window.scrollTo({ top: 0 });
-    // Pick up changes made on other devices, at most every 30 seconds.
-    refreshIfStale(30_000).catch(() => undefined);
+    // Pick up changes made on other devices, at most every 3 minutes.
+    refreshIfStale(3 * 60_000).catch(() => undefined);
   }
 
   function renderContent() {

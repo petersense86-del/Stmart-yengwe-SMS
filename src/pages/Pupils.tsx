@@ -3,7 +3,7 @@ import { GraduationCap, Plus, Search } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { Card, Button, Input, Select, Modal, Badge, Table, EmptyState, PageHeader, Avatar, RowAction, Alert } from "../components/ui";
 import { toast, confirmDialog, showCredentials } from "../components/feedback";
-import { getDb, saveDb, logActivity, refreshData, useDbVersion } from "../utils/db";
+import { getDb, saveDb, logActivity, refreshData, uniqueCode, useDbVersion } from "../utils/db";
 import { adminUsers } from "../lib/supabase";
 import { readImage, IMAGE_SIZES } from "../utils/image";
 import { PROVINCES, FORMS, FORM_INFO, A_LEVEL_MIN_SUBJECTS, A_LEVEL_MAX_SUBJECTS, formLabel, isALevel, isForm } from "../data/constants";
@@ -64,6 +64,11 @@ export default function Pupils() {
     setError("");
     if (!form.fullName?.trim() || !form.grade) { setError("Full name and form are required."); return; }
     const aLevel = isALevel(form.grade);
+    const pupilId = form.pupilId?.trim();
+    if (pupilId && pupils.some((p) => p.pupilId === pupilId && p.id !== modal.pupil?.id)) {
+      setError(`Pupil ID ${pupilId} is already used by another pupil.`);
+      return;
+    }
     const chosen = form.subjects?.length ?? 0;
     if (aLevel && (chosen < A_LEVEL_MIN_SUBJECTS || chosen > A_LEVEL_MAX_SUBJECTS)) {
       setError(`A-Level pupils take ${A_LEVEL_MIN_SUBJECTS} to ${A_LEVEL_MAX_SUBJECTS} subjects. ${chosen} selected.`);
@@ -77,7 +82,7 @@ export default function Pupils() {
         const profile = {
           email: form.email, phone: form.phone, profilePicture: form.profilePicture, gender: form.gender,
           grade: form.grade, classSection: form.classSection || "A",
-          pupilId: form.pupilId || `PUP-${Date.now().toString().slice(-5)}`,
+          pupilId: pupilId || uniqueCode("PUP", pupils.map((p) => p.pupilId)),
           province: form.province, district: form.district, dateOfBirth: form.dateOfBirth,
           guardiansName: form.guardiansName, guardiansPhone: form.guardiansPhone, address: form.address,
           enrollmentYear: new Date().getFullYear(),

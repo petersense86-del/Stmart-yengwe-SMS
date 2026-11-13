@@ -249,7 +249,7 @@ export function saveDb(db: Database): void {
   const seenVersions = cloneVersions.get(db);
   const isStale = (table: string) => !!seenVersions && seenVersions.get(table) !== tableVersions.get(table);
   const staleCollections = new Set(SPECS.filter((s) => isStale(s.table)).map((s) => s.collection));
-  const ops: { spec: TableSpec; kind: "insert" | "update" | "delete"; id: string; row?: Row }[] = [];
+  const ops: Op[] = [];
 
   for (const spec of SPECS) {
     const stale = isStale(spec.table);
@@ -265,7 +265,7 @@ export function saveDb(db: Database): void {
       if (prev === undefined) {
         if (spec.insert) { ops.push({ spec, kind: "insert", id, row }); snap.set(id, serialized); }
       } else if (prev !== serialized) {
-        if (spec.update) { ops.push({ spec, kind: "update", id, row }); snap.set(id, serialized); }
+        if (spec.update) { ops.push({ spec, kind: "update", id, row, prev }); snap.set(id, serialized); }
       }
     }
     // Only delete rows this copy actually knew about; a stale copy never deletes.
@@ -312,7 +312,7 @@ export function saveDb(db: Database): void {
   });
 }
 
-type Op = { spec: TableSpec; kind: "insert" | "update" | "delete"; id: string; row?: Row };
+type Op = { spec: TableSpec; kind: "insert" | "update" | "delete"; id: string; row?: Row; prev?: string };
 let hasUnsaved = false;
 
 // Forget that these ops reached the server, so the next save sends them again.
@@ -337,11 +337,33 @@ async function runOp(op: Op) {
     if (error) throw new Error(friendlyError(error.message, error.code));
     return;
   }
-  if (op.kind === "insert") res = await t.insert(op.row!).select(spec.pk);
+  if (op.kind === "update" && spec.table === "app_config" && op.prev) {
+    // Settings are one shared record. Apply only what this save changed on top of the
+    // server's latest copy, so two admins editing different things don't overwrite each other.
+    const current = await supabase.from(spec.table).select("data").eq(spec.pk, op.id).maybeSingle();
+    if (current.error) throw new Error(friendlyError(current.error.message, current.error.code));
+    const before = (JSON.parse(op.prev) as Row).data;
+    const merged = mergeChanges(current.data?.data, before, op.row!.data);
+    res = await supabase.from(spec.table).update({ data: merged }).eq(spec.pk, op.id).select(spec.pk);
+  } else if (op.kind === "insert") res = await t.insert(op.row!).select(spec.pk);
   else if (op.kind === "update") res = await t.update(spec.updatePayload ? spec.updatePayload(op.row!) : op.row!).eq(spec.pk, op.id).select(spec.pk);
   else res = await t.delete().eq(spec.pk, op.id).select(spec.pk);
   if (res.error) throw new Error(friendlyError(res.error.message, res.error.code));
   if (!res.data || res.data.length === 0) throw new Error("You don't have permission to make that change.");
+}
+
+const isPlainObject = (v: unknown): v is Row => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** `current` with every key that differs between `before` and `after` set to its `after` value (recursing into objects). */
+function mergeChanges(current: unknown, before: unknown, after: unknown): unknown {
+  if (!isPlainObject(current) || !isPlainObject(before) || !isPlainObject(after)) return after;
+  const out: Row = { ...current };
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (JSON.stringify(before[key]) === JSON.stringify(after[key])) continue;
+    if (after[key] === undefined) delete out[key];
+    else out[key] = mergeChanges(current[key], before[key], after[key]);
+  }
+  return out;
 }
 
 function friendlyError(message: string, code?: string) {
@@ -493,6 +515,15 @@ export function onSyncError(l: (message: string) => void) {
 export function findUser(id: string): User | undefined {
   const u = cache.users.find((x) => x.id === id);
   return u ? structuredClone(u) : undefined;
+}
+
+/** A short ID such as PUP-2026-K3F9Q that none of `taken` already uses. */
+export function uniqueCode(prefix: string, taken: (string | undefined)[]): string {
+  const used = new Set(taken);
+  for (;;) {
+    const code = `${prefix}-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    if (!used.has(code)) return code;
+  }
 }
 
 export function genId(prefix = "id"): string {

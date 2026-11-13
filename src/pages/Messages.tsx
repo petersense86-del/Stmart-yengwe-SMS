@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, Mic, MessageSquare, Pause, Phone, PhoneOff, Play, Search, SendHorizonal, Square } from "lucide-react";
+import { ArrowLeft, Mic, MessageSquare, Pause, Phone, Play, Search, SendHorizonal, Square } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { Card, Button, Input, PageHeader, Avatar } from "../components/ui";
 import { toast } from "../components/feedback";
 import { getDb, saveDb, genId, logActivity, useDbVersion } from "../utils/db";
 import type { User, Message } from "../types";
+import { formLabel } from "../data/constants";
 
 const MAX_VOICE_SECONDS = 120;
 
@@ -38,7 +39,6 @@ export default function Messages() {
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [newText, setNewText] = useState("");
   const [search, setSearch] = useState("");
-  const [callActive, setCallActive] = useState<{ user: User; startedAt: number; duration: number; interval?: number } | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -173,24 +173,6 @@ export default function Messages() {
     if (audio.paused) { audio.play(); setPlayingId(m.id); } else { audio.pause(); setPlayingId(null); }
   }
 
-  function startCall(other: User) {
-    if (callActive) return;
-    const startedAt = Date.now();
-    const interval = window.setInterval(() => {
-      setCallActive((prev) => prev ? { ...prev, duration: Math.floor((Date.now() - prev.startedAt) / 1000) } : prev);
-    }, 1000);
-    setCallActive({ user: other, startedAt, duration: 0, interval });
-    pushMessage({ toId: other.id, text: "Call started", kind: "call-answered" });
-  }
-
-  function endCall() {
-    if (!callActive) return;
-    if (callActive.interval) clearInterval(callActive.interval);
-    pushMessage({ toId: callActive.user.id, text: `Call ended (${formatDuration(callActive.duration)})`, kind: "call-answered", callDuration: callActive.duration });
-    logActivity(currentUser.id, currentUser.fullName, currentUser.role, `Call with ${callActive.user.fullName} ended`, formatDuration(callActive.duration));
-    setCallActive(null);
-  }
-
   const q = search.trim().toLowerCase();
   const filteredConversations = conversations.filter((c) => !q || c.otherUser.fullName.toLowerCase().includes(q));
   const otherPeople = q
@@ -272,12 +254,9 @@ export default function Messages() {
                   <Avatar name={activeDbUser.fullName} src={activeDbUser.profilePicture} />
                   <div className="min-w-0">
                     <div className="font-semibold text-sm text-gray-900 truncate">{activeDbUser.fullName}</div>
-                    <div className="text-xs text-gray-500">{activeDbUser.isDeveloper ? "Developer" : ROLE_NAME[activeDbUser.role]}{activeDbUser.grade ? ` · Grade ${activeDbUser.grade}` : ""}</div>
+                    <div className="text-xs text-gray-500">{activeDbUser.isDeveloper ? "Developer" : ROLE_NAME[activeDbUser.role]}{activeDbUser.grade ? ` · ${formLabel(activeDbUser.grade)}` : ""}</div>
                   </div>
                 </div>
-                {!callActive && currentUser.role !== "pupil" && (
-                  <Button variant="success" className="!px-3" onClick={() => startCall(activeDbUser)} aria-label={`Call ${activeDbUser.fullName}`}><Phone className="w-4 h-4" /><span className="hidden sm:inline">Call</span></Button>
-                )}
               </div>
 
               <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-1.5 bg-gray-50">
@@ -338,21 +317,6 @@ export default function Messages() {
         </Card>
       </div>
 
-      {callActive && (
-        <div className="fixed inset-0 bg-gray-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-overlayIn">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center animate-modalIn">
-            <div className="text-sm text-gray-500 mb-4">In call with</div>
-            <Avatar name={callActive.user.fullName} src={callActive.user.profilePicture} size="xl" className="mx-auto ring-4 ring-emerald-500 ring-offset-4 animate-pulse" />
-            <h2 className="text-xl font-bold text-gray-900 mt-5">{callActive.user.fullName}</h2>
-            <p className="text-3xl font-mono text-emerald-600 mt-2 tabular-nums">{formatDuration(callActive.duration)}</p>
-            <div className="mt-7">
-              <button onClick={endCall} className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-full font-semibold shadow-lg transition-colors">
-                <PhoneOff className="w-5 h-5" />End call
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

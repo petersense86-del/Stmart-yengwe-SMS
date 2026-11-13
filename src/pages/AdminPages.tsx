@@ -3,7 +3,7 @@ import { Bell, ClipboardList, Download, Mail, Plus, Search } from "lucide-react"
 import { useAuth } from "../context/AuthContext";
 import { Card, Button, Input, Select, Modal, Badge, Table, EmptyState, PageHeader, Textarea, Alert } from "../components/ui";
 import { toast, confirmDialog } from "../components/feedback";
-import { getDb, saveDb, genId, logActivity, useDbVersion } from "../utils/db";
+import { getDb, saveDb, genId, logActivity, refreshData, useDbVersion } from "../utils/db";
 import { readImage, IMAGE_SIZES } from "../utils/image";
 import type { DownloadLog, SystemUpdate, ActivityLog, SchoolSettings } from "../types";
 
@@ -191,6 +191,7 @@ export function SettingsPage() {
   const logoRef = useRef<HTMLInputElement>(null);
   const watermarkRef = useRef<HTMLInputElement>(null);
   const sigRef = useRef<HTMLInputElement>(null);
+  const [backingUp, setBackingUp] = useState(false);
 
   if (!user) return null;
   const currentUser = user;
@@ -214,6 +215,27 @@ export function SettingsPage() {
       apply(await readImage(file, size));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed.");
+    }
+  }
+
+  async function downloadBackup() {
+    setBackingUp(true);
+    try {
+      await refreshData();
+      const data = getDb();
+      const backup = { exportedAt: new Date().toISOString(), exportedBy: currentUser.fullName, ...data };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: "application/json" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ypms-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      logActivity(currentUser.id, currentUser.fullName, currentUser.role, "Downloaded a data backup");
+      toast.success(`Backup downloaded: ${data.users.length} accounts, ${data.results.length} results.`);
+    } catch {
+      toast.error("Could not download the backup. Check your connection and try again.");
+    } finally {
+      setBackingUp(false);
     }
   }
 
@@ -306,6 +328,14 @@ export function SettingsPage() {
           <Button variant="gold" onClick={saveSettings}>Save settings</Button>
         </div>
       </Card>
+
+      {isHead && (
+        <Card>
+          <h3 className="font-semibold text-gray-900 mb-1">Data backup</h3>
+          <p className="text-sm text-gray-500 mb-4">Downloads a copy of every pupil and staff record, all results, homework, notices, recent logs and school settings. Keep it somewhere safe, and download a fresh copy at least once a week and at the end of every term. Passwords and other people's private messages are not included.</p>
+          <Button variant="secondary" onClick={downloadBackup} loading={backingUp}><Download className="w-4 h-4" />Download backup</Button>
+        </Card>
+      )}
 
       {isHead && (
         <Card>

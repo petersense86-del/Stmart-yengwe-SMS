@@ -18,7 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "pupils", label: "Pupils", icon: GraduationCap, roles: ["headteacher", "deputy", "hod", "teacher"] },
   { id: "teachers", label: "Teachers & HoDs", icon: Users, roles: ["headteacher", "deputy", "hod"] },
   { id: "results", label: "Results", icon: BarChart3, roles: ["headteacher", "deputy", "hod", "teacher", "pupil"] },
-  { id: "messages", label: "Messages & Calls", icon: MessageSquare, roles: ["headteacher", "deputy", "hod", "teacher", "pupil"] },
+  { id: "messages", label: "Messages", icon: MessageSquare, roles: ["headteacher", "deputy", "hod", "teacher", "pupil"] },
   { id: "homework", label: "Homework", icon: BookOpen, roles: ["headteacher", "deputy", "hod", "teacher", "pupil"] },
   { id: "notices", label: "Notice Board", icon: Megaphone, roles: ["headteacher", "deputy", "hod", "teacher", "pupil"] },
   { id: "downloads", label: "Download Logs", icon: Download, roles: ["headteacher"] },

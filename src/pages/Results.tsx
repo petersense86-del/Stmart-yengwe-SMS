@@ -6,7 +6,7 @@ import { toast, confirmDialog } from "../components/feedback";
 import { getDb, saveDb, genId, logActivity, useDbVersion } from "../utils/db";
 import { FORMS, ASSESSMENTS, TERMS, assessmentOrder, formLabel, isALevel } from "../data/constants";
 import type { User, Result, SubjectScore } from "../types";
-import { formStreams, formSubjects, gradeFor, gradingScale, performanceColor } from "../utils/academics";
+import { classTeacherId, formStreams, formSubjects, gradeFor, gradingScale, performanceColor, resultGrading } from "../utils/academics";
 
 const THIS_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: THIS_YEAR - 2015 + 2 }, (_, i) => THIS_YEAR + 1 - i);
@@ -77,6 +77,10 @@ export default function Results() {
   const legacyTerms = useMemo(() => Array.from(new Set(db.results.map((r) => r.term))).filter((t) => !ASSESSMENTS.some((a) => a.name === t)), [db]);
 
   if (!user) return null;
+
+  // Only the stream's class teacher (or an admin) writes the class-teacher comment.
+  const streamClassTeacher = classTeacherId(db.settings, selectedGrade, selectedSection);
+  const canComment = isAdmin || streamClassTeacher === currentUser.id;
 
   function canEditSubject(r: Result, subject: string): boolean {
     const s = r.scores.find((x) => x.subject === subject);
@@ -157,10 +161,11 @@ export default function Results() {
         result.publishedBy = currentUser.id;
       }
       const behaviourComment = pupilBehaviourComments[sc.pupilId]?.trim();
-      if (behaviourComment) {
+      if (canComment && behaviourComment) {
         result.classTeacherComment = behaviourComment;
-        result.classTeacherId = currentUser.id;
+        result.classTeacherId = streamClassTeacher || currentUser.id;
       }
+      result.gradingScale = gradingScale(db2.settings);
     });
     saveDb(db2);
     logActivity(currentUser.id, currentUser.fullName, currentUser.role, `${publish ? "Published" : "Saved"} ${selectedSubject} results`, `${selectedGrade}${selectedSection} ${selectedTerm} ${selectedYear}`);
@@ -191,6 +196,7 @@ export default function Results() {
       res.publishedAt = now;
       res.publishedBy = currentUser.id;
     }
+    res.gradingScale = gradingScale(db2.settings);
     saveDb(db2);
     toast.success("Results published.");
   }
@@ -238,6 +244,23 @@ export default function Results() {
       // The PDF library is large, so it is only downloaded when first needed.
       const { generateResultPDF } = await import("../utils/pdf");
       generateResultPDF(r, p, currentUser, db.settings);
+    } catch {
+      toast.error("Could not generate the PDF. Please try again.");
+    }
+  }
+
+  // One report for a whole term: Test 1, Test 2 and the end-of-term test side by side.
+  function termOf(r: Result) {
+    return ASSESSMENTS.find((a) => a.name === r.term)?.term;
+  }
+  async function downloadTermReport(r: Result) {
+    const term = termOf(r);
+    const p = db.users.find((u) => u.id === r.pupilId) || (r.pupilId === currentUser.id ? currentUser : undefined);
+    if (!term || !p) return;
+    const termResults = db.results.filter((x) => x.pupilId === r.pupilId && x.year === r.year && x.grade === r.grade && termOf(x) === term);
+    try {
+      const { generateTermReportPDF } = await import("../utils/pdf");
+      generateTermReportPDF(term, r.year, termResults, p, currentUser, db.settings);
     } catch {
       toast.error("Could not generate the PDF. Please try again.");
     }
@@ -414,7 +437,7 @@ export default function Results() {
                     <th className="px-3 py-2.5 text-left w-10">#</th>
                     <th className="px-3 py-2.5 text-left min-w-[140px]">Pupil</th>
                     <th className="px-3 py-2.5 text-left w-28">Score</th>
-                    <th className="px-3 py-2.5 text-left min-w-[220px]">Class-teacher comment</th>
+                    {canComment && <th className="px-3 py-2.5 text-left min-w-[220px]">Class-teacher comment</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -436,15 +459,17 @@ export default function Results() {
                           />
                           {yg && <div className="text-[11px] text-gray-500 mt-1">Grade {yg.grade} · {yg.name}</div>}
                         </td>
-                        <td className="px-3 py-2">
-                          <textarea
-                            rows={2} aria-label={`Comment for ${sc.pupilName}`}
-                            value={pupilBehaviourComments[sc.pupilId] || ""}
-                            onChange={(e) => setPupilBehaviourComments((prev) => ({ ...prev, [sc.pupilId]: e.target.value }))}
-                            placeholder="Behaviour, conduct, attitude…"
-                            className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-sm resize-none outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
-                          />
-                        </td>
+                        {canComment && (
+                          <td className="px-3 py-2">
+                            <textarea
+                              rows={2} aria-label={`Comment for ${sc.pupilName}`}
+                              value={pupilBehaviourComments[sc.pupilId] || ""}
+                              onChange={(e) => setPupilBehaviourComments((prev) => ({ ...prev, [sc.pupilId]: e.target.value }))}
+                              placeholder="Behaviour, conduct, attitude…"
+                              className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-sm resize-none outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
+                            />
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -482,7 +507,7 @@ export default function Results() {
               </div>
               <Table headers={isPupil ? ["Subject", "Score", "Grade", "Remark", "Teacher"] : ["Subject", "Score", "Status", "Grade", "Remark", "Teacher", ""]}>
                 {displayScores.map((s) => {
-                  const yg = gradeFor(s.score, db.settings);
+                  const yg = gradeFor(s.score, resultGrading(db.settings, modal.result!));
                   const gradeColor = performanceColor(s.score, db.settings);
                   return (
                     <tr key={s.subject}>
@@ -509,13 +534,17 @@ export default function Results() {
               )}
 
               {isPupil ? (
-                <div className="flex justify-end">
+                <div className="flex justify-end flex-wrap gap-2">
+                  {termOf(modal.result) && <Button variant="secondary" onClick={() => downloadTermReport(modal.result!)}><Download className="w-4 h-4" />{termOf(modal.result)} report (all tests)</Button>}
                   <Button variant="gold" onClick={() => downloadPDF(modal.result!)}><Download className="w-4 h-4" />Download report card</Button>
                 </div>
               ) : publishedCount > 0 ? (
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <p className="text-sm text-gray-500"><strong className="text-gray-900">{publishedCount}</strong> of {displayScores.length} subjects published. The PDF includes published subjects only.</p>
-                  <Button variant="gold" onClick={() => downloadPDF(modal.result!)}><Download className="w-4 h-4" />Download PDF</Button>
+                  <div className="flex flex-wrap gap-2">
+                    {termOf(modal.result) && <Button variant="secondary" onClick={() => downloadTermReport(modal.result!)}><Download className="w-4 h-4" />{termOf(modal.result)} report (all tests)</Button>}
+                    <Button variant="gold" onClick={() => downloadPDF(modal.result!)}><Download className="w-4 h-4" />Download PDF</Button>
+                  </div>
                 </div>
               ) : (
                 <Alert tone="warning">These results are still a draft, so the pupil can't see them. Each teacher can publish their own subject independently.</Alert>

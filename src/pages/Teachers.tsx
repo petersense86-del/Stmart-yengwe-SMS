@@ -3,7 +3,7 @@ import { Plus, Search, Users, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { Card, Button, Input, Select, Modal, Badge, Table, EmptyState, PageHeader, Avatar, RowAction, Alert } from "../components/ui";
 import { toast, confirmDialog, showCredentials } from "../components/feedback";
-import { getDb, saveDb, logActivity, refreshData, useDbVersion } from "../utils/db";
+import { getDb, saveDb, logActivity, refreshData, uniqueCode, useDbVersion } from "../utils/db";
 import { adminUsers } from "../lib/supabase";
 import { readImage, IMAGE_SIZES } from "../utils/image";
 import { DEPARTMENTS, FORMS, formLabel } from "../data/constants";
@@ -73,11 +73,13 @@ export default function Teachers() {
       if (db.users.some((u) => u.username === form.username)) { setError("That username already exists."); return; }
       const role = (form.role || "teacher") as User["role"];
       if (role === "hod" && !form.hodDepartment) { setError("Select the department this HoD leads."); return; }
+      const teacherId = form.teacherId?.trim();
+      if (teacherId && db.users.some((u) => u.teacherId === teacherId)) { setError(`Teacher ID ${teacherId} is already in use.`); return; }
       setSaving(true);
       try {
         const profile = {
           email: form.email, phone: form.phone, profilePicture: form.profilePicture, gender: form.gender,
-          teacherId: form.teacherId || (role === "deputy" ? undefined : `TCH-${Date.now().toString().slice(-5)}`),
+          teacherId: teacherId || (role === "deputy" ? undefined : uniqueCode("TCH", db.users.map((u) => u.teacherId))),
           departments: form.departments || (role === "hod" && form.hodDepartment ? [form.hodDepartment] : []),
           hodDepartment: role === "hod" ? form.hodDepartment : undefined,
           subjects: [], classes: [], qualifications: form.qualifications,

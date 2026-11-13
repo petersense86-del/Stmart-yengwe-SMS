@@ -1,5 +1,5 @@
 import { A_LEVEL_PATHWAYS, A_LEVEL_SUBJECTS, DEFAULT_STREAMS, FORMS, O_LEVEL_SUBJECTS, isALevel, isForm } from "../data/constants";
-import { YENGWE_GRADES, type SchoolSettings, type User, type YengweGrade } from "../types";
+import { YENGWE_GRADES, type Result, type SchoolSettings, type User, type YengweGrade } from "../types";
 
 /*
  * The school's academic setup: grading scale, and the subjects, streams and
@@ -7,7 +7,7 @@ import { YENGWE_GRADES, type SchoolSettings, type User, type YengweGrade } from 
  * an administrator changes it on the Forms & Grading page.
  */
 
-type Settings = Pick<SchoolSettings, "gradingScale" | "passMark" | "goodMark" | "formSubjects" | "formStreams" | "formPathways">;
+type Settings = Pick<SchoolSettings, "gradingScale" | "passMark" | "goodMark" | "formSubjects" | "formStreams" | "formPathways" | "classTeachers">;
 
 /** Bands from highest to lowest minimum. */
 export function gradingScale(s: Settings): YengweGrade[] {
@@ -19,6 +19,15 @@ export function gradingScale(s: Settings): YengweGrade[] {
 export function gradeFor(score: number, s: Settings): YengweGrade {
   const scale = gradingScale(s);
   return scale.find((g) => score >= g.min) || scale[scale.length - 1];
+}
+
+/** Settings to grade a saved result with: the scale it was marked under, if it recorded one. */
+export function resultGrading<S extends Settings>(s: S, result?: Pick<Result, "gradingScale">): S {
+  return result?.gradingScale?.length ? { ...s, gradingScale: result.gradingScale } : s;
+}
+
+export function classTeacherId(s: Settings, form?: string, stream?: string): string | undefined {
+  return form ? s.classTeachers?.[form]?.[stream || "A"] : undefined;
 }
 
 export function performanceColor(score: number, s: Settings): "red" | "yellow" | "green" {
