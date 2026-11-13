@@ -1,0 +1,21 @@
+# Supabase pauses free-tier projects after about a week without activity, which
+# stops the site from saving anything. A tiny query every two days keeps it awake.
+# The publishable key below is the same public key the website ships to every browser.
+name: Keep Supabase awake
+
+on:
+  schedule:
+    - cron: "17 6 */2 * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query the database
+        env:
+          SUPABASE_URL: https://uioyehqxbybttjfazitt.supabase.co
+          SUPABASE_KEY: sb_publishable_VRbP-WwS4lOf6A5CsdPrTQ_qgn0-gxp
+        run: |
+          curl --fail --silent --show-error --max-time 60 -o /dev/null "$SUPABASE_URL/rest/v1/app_config?select=key&limit=1" -H "apikey: $SUPABASE_KEY"
+          echo "Supabase responded"
